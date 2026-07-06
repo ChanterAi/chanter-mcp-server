@@ -1,176 +1,95 @@
-// Tool registry – defines every MCP tool exposed by this server.
-// Each tool maps to a handler and permission entry.
-// C1 (5) + P1 (3) + P2 (4) + P3A (2) = 14 tools
+// Tool registry – 17 MCP tools: C1(5) + P1(3) + P2(4) + P3A(2) + P3B(3)
 
 import type { ChantProduct } from "./products.js";
 import type { PermissionLevel } from "./permissions.js";
 
 export interface McpToolParameter {
-  name: string;
-  description: string;
-  type: "string" | "number" | "boolean";
-  required: boolean;
-  default?: unknown;
+  name: string; description: string; type: "string" | "number" | "boolean"; required: boolean; default?: unknown;
 }
-
 export interface McpToolDefinition {
-  name: string;
-  description: string;
-  permissionLevel: PermissionLevel;
-  productScope?: string;
-  parameters: McpToolParameter[];
+  name: string; description: string; permissionLevel: PermissionLevel; productScope?: string; parameters: McpToolParameter[];
 }
 
 export const EXPOSED_TOOLS: McpToolDefinition[] = [
-  // === Checkpoint 1 ===
-  {
-    name: "chanter.list_products",
-    description: "List all CHANTER products in the registry with summary metadata.",
-    permissionLevel: "read_public",
-    parameters: [],
-  },
-  {
-    name: "chanter.get_product_status",
-    description: "Get detailed status and metadata for a specific CHANTER product by ID.",
-    permissionLevel: "read_internal",
-    productScope: "any",
-    parameters: [
-      { name: "productId", description: "The product ID (e.g., autoposter, clean_engine, operator)", type: "string", required: true },
-    ],
-  },
-  {
-    name: "chanter.list_safe_tools",
-    description: "List all currently exposed safe MCP tools and their permission levels.",
-    permissionLevel: "read_public",
-    parameters: [],
-  },
-  {
-    name: "chanter.inspect_workspace",
-    description: "Inspect high-level CHANTER workspace directory presence. Does NOT read secrets, scan large directories, or access .env files.",
-    permissionLevel: "read_internal",
-    parameters: [],
-  },
-  {
-    name: "chanter.get_readiness",
-    description: "Get the readiness checklist for the CHANTER MCP server itself, including product readiness states.",
-    permissionLevel: "read_public",
-    parameters: [],
-  },
-
-  // === P1: Read-Only System Intelligence ===
-  {
-    name: "chanter.git_status",
-    description: "Return a safe, read-only git status summary for a CHANTER product or workspace root. Uses only allowlisted git commands.",
-    permissionLevel: "read_internal",
-    productScope: "any",
-    parameters: [
-      { name: "productId", description: "Optional product ID. If omitted, checks the CHANTER workspace root.", type: "string", required: false },
-      { name: "includeFiles", description: "Whether to include changed file paths (default: false).", type: "boolean", required: false, default: false },
-      { name: "maxFiles", description: "Maximum number of file paths to include (default: 25).", type: "number", required: false, default: 25 },
-    ],
-  },
-  {
-    name: "chanter.test_summary",
-    description: "Return safe test/build command metadata for a CHANTER product. Inspects package.json scripts only. Does NOT execute npm scripts, read .env, or run tests.",
-    permissionLevel: "read_internal",
-    productScope: "any",
-    parameters: [
-      { name: "productId", description: "The product ID.", type: "string", required: true },
-      { name: "runMode", description: "Inspection mode: 'metadata_only' (default) or 'latest_known'. Does not execute commands in P1.", type: "string", required: false, default: "metadata_only" },
-    ],
-  },
-  {
-    name: "chanter.product_readiness",
-    description: "Return a product readiness score (0-100) using registry data, workspace presence, git status, and validation command availability.",
-    permissionLevel: "read_internal",
-    productScope: "any",
-    parameters: [
-      { name: "productId", description: "The product ID to assess readiness for.", type: "string", required: true },
-    ],
-  },
-
-  // === P2: Dry-Run Proposal & Approval Foundation ===
-  {
-    name: "chanter.propose_action",
-    description: "Create a dry-run action proposal for a CHANTER product. Does NOT execute, deploy, post, commit, or delete.",
-    permissionLevel: "write_proposed",
-    productScope: "any",
-    parameters: [
-      { name: "productId", description: "The target product ID.", type: "string", required: true },
-      { name: "actionType", description: "Type: run_validation, review_readiness, prepare_commit_review, draft_autoposter_campaign, draft_clean_engine_job, inspect_product_health, propose_repair_plan.", type: "string", required: true },
-      { name: "objective", description: "Plain-language description of what the proposal aims to accomplish.", type: "string", required: true },
-      { name: "scope", description: "Optional array of scope qualifiers.", type: "string", required: false },
-      { name: "requestedBy", description: "Who requested this proposal. Defaults to 'system'.", type: "string", required: false },
-      { name: "riskTolerance", description: "Risk tolerance: low, medium, or high.", type: "string", required: false },
-    ],
-  },
-  {
-    name: "chanter.list_proposals",
-    description: "List recent dry-run proposals with optional product and status filters.",
-    permissionLevel: "read_internal",
-    parameters: [
-      { name: "productId", description: "Optional product ID to filter proposals.", type: "string", required: false },
-      { name: "status", description: "Optional status filter: draft, pending_approval, approved, rejected, needs_changes, expired.", type: "string", required: false },
-      { name: "limit", description: "Maximum proposals to return (default: 20, max: 50).", type: "number", required: false, default: 20 },
-    ],
-  },
-  {
-    name: "chanter.get_proposal",
-    description: "Read a single proposal by proposalId. Returns full details including risk and review history.",
-    permissionLevel: "read_internal",
-    parameters: [
-      { name: "proposalId", description: "The proposal ID to retrieve.", type: "string", required: true },
-    ],
-  },
-  {
-    name: "chanter.review_proposal",
-    description: "Record a human review decision for a proposal. Updates metadata only. Does NOT execute.",
-    permissionLevel: "write_proposed",
-    parameters: [
-      { name: "proposalId", description: "The proposal ID to review.", type: "string", required: true },
-      { name: "decision", description: "Review decision: approved_for_future_execution, rejected, or needs_changes.", type: "string", required: true },
-      { name: "reviewer", description: "Name or identifier of the reviewer.", type: "string", required: true },
-      { name: "notes", description: "Optional review notes or feedback.", type: "string", required: false },
-    ],
-  },
-
-  // === P3A: Operator Approval Bridge ===
-  {
-    name: "chanter.get_approval_requirements",
-    description: "Get Operator approval requirements for a proposal. Returns approval routes, reviewer roles, required gates, evidence bundle. Does NOT execute, modify, or approve anything.",
-    permissionLevel: "read_internal",
-    parameters: [
-      { name: "proposalId", description: "The proposal ID to get approval requirements for.", type: "string", required: true },
-    ],
-  },
-  {
-    name: "chanter.attach_operator_review",
-    description: "Attach an Operator-style review event to a proposal. Updates approval stage only. Does NOT execute. executionStatus remains not_executed.",
-    permissionLevel: "write_proposed",
-    parameters: [
-      { name: "proposalId", description: "The proposal ID to review.", type: "string", required: true },
-      { name: "reviewer", description: "Name or identifier of the reviewer.", type: "string", required: true },
-      { name: "reviewerRole", description: "Reviewer role: founder, operator, safecommit, product_owner, or system.", type: "string", required: true },
-      { name: "decision", description: "Review decision: approved_metadata_only, rejected, or needs_changes.", type: "string", required: true },
-      { name: "notes", description: "Optional review notes or feedback.", type: "string", required: false },
-    ],
-  },
+  { name: "chanter.list_products", description: "List all CHANTER products in the registry with summary metadata.", permissionLevel: "read_public", parameters: [] },
+  { name: "chanter.get_product_status", description: "Get detailed status for a specific CHANTER product by ID.", permissionLevel: "read_internal", productScope: "any", parameters: [{ name: "productId", description: "The product ID (autoposter, clean_engine, etc.)", type: "string", required: true }] },
+  { name: "chanter.list_safe_tools", description: "List all exposed safe MCP tools and their permission levels.", permissionLevel: "read_public", parameters: [] },
+  { name: "chanter.inspect_workspace", description: "Inspect workspace directory presence. No secrets, no .env.", permissionLevel: "read_internal", parameters: [] },
+  { name: "chanter.get_readiness", description: "Get MCP server readiness checklist.", permissionLevel: "read_public", parameters: [] },
+  { name: "chanter.git_status", description: "Safe read-only git status summary. Allowlisted commands only.", permissionLevel: "read_internal", productScope: "any", parameters: [
+    { name: "productId", description: "Optional product ID.", type: "string", required: false },
+    { name: "includeFiles", description: "Include file paths (default false).", type: "boolean", required: false, default: false },
+    { name: "maxFiles", description: "Max files (default 25).", type: "number", required: false, default: 25 },
+  ]},
+  { name: "chanter.test_summary", description: "Inspect package.json scripts. Does NOT execute npm.", permissionLevel: "read_internal", productScope: "any", parameters: [
+    { name: "productId", description: "The product ID.", type: "string", required: true },
+    { name: "runMode", description: "metadata_only (default) or latest_known.", type: "string", required: false, default: "metadata_only" },
+  ]},
+  { name: "chanter.product_readiness", description: "Product readiness score (0-100).", permissionLevel: "read_internal", productScope: "any", parameters: [
+    { name: "productId", description: "Product ID.", type: "string", required: true },
+  ]},
+  { name: "chanter.propose_action", description: "Create dry-run action proposal. Does NOT execute.", permissionLevel: "write_proposed", productScope: "any", parameters: [
+    { name: "productId", description: "Target product ID.", type: "string", required: true },
+    { name: "actionType", description: "Action type (run_validation, review_readiness, etc.)", type: "string", required: true },
+    { name: "objective", description: "What the proposal aims to accomplish.", type: "string", required: true },
+    { name: "scope", description: "Optional scope qualifiers.", type: "string", required: false },
+    { name: "requestedBy", description: "Requestor. Default: system.", type: "string", required: false },
+    { name: "riskTolerance", description: "low, medium, high.", type: "string", required: false },
+  ]},
+  { name: "chanter.list_proposals", description: "List proposals with product/status/limit filters.", permissionLevel: "read_internal", parameters: [
+    { name: "productId", description: "Optional product filter.", type: "string", required: false },
+    { name: "status", description: "Optional status filter.", type: "string", required: false },
+    { name: "limit", description: "Max results (default 20, max 50).", type: "number", required: false, default: 20 },
+  ]},
+  { name: "chanter.get_proposal", description: "Read one proposal by ID with full details.", permissionLevel: "read_internal", parameters: [
+    { name: "proposalId", description: "Proposal ID.", type: "string", required: true },
+  ]},
+  { name: "chanter.review_proposal", description: "Record human review decision. Metadata only.", permissionLevel: "write_proposed", parameters: [
+    { name: "proposalId", description: "Proposal ID.", type: "string", required: true },
+    { name: "decision", description: "approved_for_future_execution, rejected, needs_changes.", type: "string", required: true },
+    { name: "reviewer", description: "Reviewer name.", type: "string", required: true },
+    { name: "notes", description: "Optional notes.", type: "string", required: false },
+  ]},
+  { name: "chanter.get_approval_requirements", description: "Get Operator approval routes, roles, gates, evidence bundle. Metadata only.", permissionLevel: "read_internal", parameters: [
+    { name: "proposalId", description: "Proposal ID.", type: "string", required: true },
+  ]},
+  { name: "chanter.attach_operator_review", description: "Attach Operator-style review event. Metadata only.", permissionLevel: "write_proposed", parameters: [
+    { name: "proposalId", description: "Proposal ID.", type: "string", required: true },
+    { name: "reviewer", description: "Reviewer name.", type: "string", required: true },
+    { name: "reviewerRole", description: "founder, operator, safecommit, product_owner, system.", type: "string", required: true },
+    { name: "decision", description: "approved_metadata_only, rejected, needs_changes.", type: "string", required: true },
+    { name: "notes", description: "Optional notes.", type: "string", required: false },
+  ]},
+  { name: "chanter.get_safecommit_requirements", description: "Get SafeCommit review requirements. Metadata only.", permissionLevel: "read_internal", parameters: [
+    { name: "proposalId", description: "Proposal ID.", type: "string", required: true },
+  ]},
+  { name: "chanter.attach_safecommit_review", description: "Attach SafeCommit review metadata. Does NOT commit or execute.", permissionLevel: "write_proposed", parameters: [
+    { name: "proposalId", description: "Proposal ID.", type: "string", required: true },
+    { name: "reviewer", description: "SafeCommit reviewer name.", type: "string", required: true },
+    { name: "verdict", description: "safe_to_review, needs_changes, blocked, unsafe.", type: "string", required: true },
+    { name: "riskLevel", description: "low, medium, high, critical.", type: "string", required: true },
+    { name: "notes", description: "Optional notes.", type: "string", required: false },
+    { name: "validationChecks", description: "Optional validation check results.", type: "string", required: false },
+    { name: "blockers", description: "Optional review blockers.", type: "string", required: false },
+  ]},
+  { name: "chanter.get_proposal_evidence_bundle", description: "Complete evidence bundle. Summaries only — no file contents, diffs, or secrets.", permissionLevel: "read_internal", parameters: [
+    { name: "proposalId", description: "Proposal ID.", type: "string", required: true },
+  ]},
 ];
 
 export function findTool(name: string): McpToolDefinition | undefined {
-  return EXPOSED_TOOLS.find((t) => t.name === name);
+  return EXPOSED_TOOLS.find(t => t.name === name);
 }
 
 export function validateToolRegistry(): string[] {
   const issues: string[] = [];
   const names = new Set<string>();
-  for (const tool of EXPOSED_TOOLS) {
-    if (names.has(tool.name)) { issues.push(`Duplicate tool name: ${tool.name}`); }
-    names.add(tool.name);
-    if (!tool.permissionLevel) { issues.push(`${tool.name}: missing permission level`); }
-    if (tool.permissionLevel === "write_approved" || tool.permissionLevel === "dangerous_forbidden") {
-      issues.push(`${tool.name}: has forbidden permission level ${tool.permissionLevel}`);
-    }
+  for (const t of EXPOSED_TOOLS) {
+    if (names.has(t.name)) issues.push(`Duplicate: ${t.name}`);
+    names.add(t.name);
+    if (!t.permissionLevel) issues.push(`${t.name}: missing permission level`);
+    if (t.permissionLevel === "write_approved" || t.permissionLevel === "dangerous_forbidden")
+      issues.push(`${t.name}: forbidden level ${t.permissionLevel}`);
   }
   return issues;
 }
