@@ -1,6 +1,5 @@
 // CHANTER MCP Server – Main server setup.
-// Wires registry, tools, audit, and safety policy into a single MCP server.
-// Checkpoint P2: Dry-Run Proposal & Approval Foundation
+// Checkpoint P3A: Operator Approval Bridge
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -23,6 +22,8 @@ import { handleProposeAction } from "./tools/proposeAction.js";
 import { handleListProposals } from "./tools/listProposals.js";
 import { handleGetProposal } from "./tools/getProposal.js";
 import { handleReviewProposal } from "./tools/reviewProposal.js";
+import { handleGetApprovalRequirements } from "./tools/getApprovalRequirements.js";
+import { handleAttachOperatorReview } from "./tools/attachOperatorReview.js";
 import { logCall } from "./audit/auditLogger.js";
 import {
   checkSafetyPolicy,
@@ -31,18 +32,10 @@ import {
 
 export function createChantermcpServer(): Server {
   const server = new Server(
-    {
-      name: "chanter-mcp-server",
-      version: "0.3.0",
-    },
-    {
-      capabilities: {
-        tools: {},
-      },
-    }
+    { name: "chanter-mcp-server", version: "0.4.0" },
+    { capabilities: { tools: {} } }
   );
 
-  // List tools handler
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
       tools: EXPOSED_TOOLS.map((tool) => ({
@@ -51,239 +44,56 @@ export function createChantermcpServer(): Server {
         inputSchema: {
           type: "object" as const,
           properties: Object.fromEntries(
-            tool.parameters.map((p) => [
-              p.name,
-              {
-                type: p.type,
-                description: p.description,
-              },
-            ])
+            tool.parameters.map((p) => [p.name, { type: p.type, description: p.description }])
           ),
-          required: tool.parameters
-            .filter((p) => p.required)
-            .map((p) => p.name),
+          required: tool.parameters.filter((p) => p.required).map((p) => p.name),
         },
       })),
     };
   });
 
-  // Call tool handler
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
     const input = args ?? {};
 
-    // Safety policy check
     const safety = checkSafetyPolicy(name, input);
     if (!safety.allowed) {
-      await logCall({
-        toolName: name,
-        permissionLevel: "dangerous_forbidden",
-        input,
-        resultStatus: "rejected",
-        safetyNotes: safety.notes,
-      });
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: rejectionResponse(name, safety.reason!, safety.notes),
-          },
-        ],
-        isError: true,
-      };
+      await logCall({ toolName: name, permissionLevel: "dangerous_forbidden", input, resultStatus: "rejected", safetyNotes: safety.notes });
+      return { content: [{ type: "text" as const, text: rejectionResponse(name, safety.reason!, safety.notes) }], isError: true };
     }
 
     const perm = PERMISSIONS[name];
-
     try {
       let result: unknown;
-      let productIdForAudit: string | undefined;
+      let pid: string | undefined;
+      const a = args as Record<string, unknown>;
 
       switch (name) {
-        // === Checkpoint 1 ===
-        case "chanter.list_products":
-          result = await handleListProducts();
-          break;
-
-        case "chanter.get_product_status": {
-          const pid = (args as Record<string, unknown>)?.productId;
-          if (typeof pid !== "string" || !pid.trim()) {
-            throw new Error('Missing or invalid parameter: "productId" (string required)');
-          }
-          productIdForAudit = pid;
-          result = await handleGetProductStatus(pid);
-          break;
-        }
-
-        case "chanter.list_safe_tools":
-          result = await handleListSafeTools();
-          break;
-
-        case "chanter.inspect_workspace":
-          result = await handleInspectWorkspace();
-          break;
-
-        case "chanter.get_readiness":
-          result = await handleGetReadiness();
-          break;
-
-        // === P1: Read-Only System Intelligence ===
-        case "chanter.git_status": {
-          const ga = args as Record<string, unknown>;
-          const pid = typeof ga?.productId === "string" ? ga.productId : undefined;
-          productIdForAudit = pid;
-          result = await handleGitStatus(pid, ga?.includeFiles === true, typeof ga?.maxFiles === "number" ? ga.maxFiles : 25);
-          break;
-        }
-
-        case "chanter.test_summary": {
-          const ta = args as Record<string, unknown>;
-          const pid = ta?.productId;
-          if (typeof pid !== "string" || !pid.trim()) {
-            throw new Error('Missing or invalid parameter: "productId" (string required)');
-          }
-          productIdForAudit = pid;
-          const runMode = (ta?.runMode === "latest_known" ? "latest_known" : "metadata_only") as "metadata_only" | "latest_known";
-          result = await handleTestSummary(pid, runMode);
-          break;
-        }
-
-        case "chanter.product_readiness": {
-          const pid = (args as Record<string, unknown>)?.productId;
-          if (typeof pid !== "string" || !pid.trim()) {
-            throw new Error('Missing or invalid parameter: "productId" (string required)');
-          }
-          productIdForAudit = pid;
-          result = await handleProductReadiness(pid);
-          break;
-        }
-
-        // === P2: Dry-Run Proposal & Approval Foundation ===
-        case "chanter.propose_action": {
-          const pa = args as Record<string, unknown>;
-          if (typeof pa.productId !== "string" || !pa.productId.trim()) {
-            throw new Error('Missing or invalid parameter: "productId" (string required)');
-          }
-          if (typeof pa.actionType !== "string" || !pa.actionType.trim()) {
-            throw new Error('Missing or invalid parameter: "actionType" (string required)');
-          }
-          if (typeof pa.objective !== "string" || !pa.objective.trim()) {
-            throw new Error('Missing or invalid parameter: "objective" (string required)');
-          }
-          productIdForAudit = pa.productId;
-          
-          const scopeParam = pa.scope;
-          const scopeArray = Array.isArray(scopeParam)
-            ? scopeParam.filter((s): s is string => typeof s === "string")
-            : undefined;
-
-          result = await handleProposeAction({
-            productId: pa.productId,
-            actionType: pa.actionType,
-            objective: pa.objective,
-            scope: scopeArray,
-            requestedBy: typeof pa.requestedBy === "string" ? pa.requestedBy : undefined,
-            riskTolerance: typeof pa.riskTolerance === "string"
-              ? (pa.riskTolerance as "low" | "medium" | "high")
-              : undefined,
-          });
-          break;
-        }
-
-        case "chanter.list_proposals": {
-          const lp = args as Record<string, unknown>;
-          result = await handleListProposals(
-            typeof lp.productId === "string" ? lp.productId : undefined,
-            typeof lp.status === "string" ? lp.status : undefined,
-            typeof lp.limit === "number" ? lp.limit : 20
-          );
-          break;
-        }
-
-        case "chanter.get_proposal": {
-          const gp = args as Record<string, unknown>;
-          if (typeof gp.proposalId !== "string" || !gp.proposalId.trim()) {
-            throw new Error('Missing or invalid parameter: "proposalId" (string required)');
-          }
-          result = await handleGetProposal(gp.proposalId);
-          break;
-        }
-
-        case "chanter.review_proposal": {
-          const rp = args as Record<string, unknown>;
-          if (typeof rp.proposalId !== "string" || !rp.proposalId.trim()) {
-            throw new Error('Missing or invalid parameter: "proposalId" (string required)');
-          }
-          if (typeof rp.decision !== "string" || !rp.decision.trim()) {
-            throw new Error('Missing or invalid parameter: "decision" (string required)');
-          }
-          if (typeof rp.reviewer !== "string" || !rp.reviewer.trim()) {
-            throw new Error('Missing or invalid parameter: "reviewer" (string required)');
-          }
-          result = await handleReviewProposal({
-            proposalId: rp.proposalId,
-            decision: rp.decision,
-            reviewer: rp.reviewer,
-            notes: typeof rp.notes === "string" ? rp.notes : undefined,
-          });
-          break;
-        }
-
+        case "chanter.list_products": result = await handleListProducts(); break;
+        case "chanter.get_product_status": pid = a.productId as string; if (!pid?.trim()) throw new Error('productId required'); result = await handleGetProductStatus(pid); break;
+        case "chanter.list_safe_tools": result = await handleListSafeTools(); break;
+        case "chanter.inspect_workspace": result = await handleInspectWorkspace(); break;
+        case "chanter.get_readiness": result = await handleGetReadiness(); break;
+        case "chanter.git_status": pid = typeof a.productId === "string" ? a.productId : undefined; result = await handleGitStatus(pid, a.includeFiles === true, typeof a.maxFiles === "number" ? a.maxFiles : 25); break;
+        case "chanter.test_summary": pid = a.productId as string; if (!pid?.trim()) throw new Error('productId required'); result = await handleTestSummary(pid, a.runMode === "latest_known" ? "latest_known" : "metadata_only"); break;
+        case "chanter.product_readiness": pid = a.productId as string; if (!pid?.trim()) throw new Error('productId required'); result = await handleProductReadiness(pid); break;
+        case "chanter.propose_action": pid = a.productId as string; const scope = Array.isArray(a.scope) ? a.scope.filter((s): s is string => typeof s === "string") : undefined; result = await handleProposeAction({ productId: pid!, actionType: a.actionType as string, objective: a.objective as string, scope, requestedBy: typeof a.requestedBy === "string" ? a.requestedBy : undefined, riskTolerance: typeof a.riskTolerance === "string" ? (a.riskTolerance as "low"|"medium"|"high") : undefined }); break;
+        case "chanter.list_proposals": result = await handleListProposals(typeof a.productId === "string" ? a.productId : undefined, typeof a.status === "string" ? a.status : undefined, typeof a.limit === "number" ? a.limit : 20); break;
+        case "chanter.get_proposal": result = await handleGetProposal(a.proposalId as string); break;
+        case "chanter.review_proposal": result = await handleReviewProposal({ proposalId: a.proposalId as string, decision: a.decision as string, reviewer: a.reviewer as string, notes: typeof a.notes === "string" ? a.notes : undefined }); break;
+        case "chanter.get_approval_requirements": result = await handleGetApprovalRequirements(a.proposalId as string); break;
+        case "chanter.attach_operator_review": result = await handleAttachOperatorReview({ proposalId: a.proposalId as string, reviewer: a.reviewer as string, reviewerRole: a.reviewerRole as string, decision: a.decision as string, notes: typeof a.notes === "string" ? a.notes : undefined }); break;
         default:
-          await logCall({
-            toolName: name,
-            permissionLevel: "read_public",
-            input,
-            resultStatus: "error",
-            safetyNotes: [`Unknown tool: ${name}`],
-          });
-
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify(
-                  { error: `Unknown tool: "${name}"`, knownTools: EXPOSED_TOOLS.map((t) => t.name) },
-                  null,
-                  2
-                ),
-              },
-            ],
-            isError: true,
-          };
+          await logCall({ toolName: name, permissionLevel: "read_public", input, resultStatus: "error", safetyNotes: [`Unknown tool: ${name}`] });
+          return { content: [{ type: "text" as const, text: JSON.stringify({ error: `Unknown tool: "${name}"`, knownTools: EXPOSED_TOOLS.map(t => t.name) }, null, 2) }], isError: true };
       }
 
-      // Log success
-      await logCall({
-        toolName: name,
-        permissionLevel: perm?.level ?? "read_public",
-        productId: productIdForAudit,
-        input,
-        resultStatus: "success",
-        safetyNotes: safety.notes,
-      });
-
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-      };
+      await logCall({ toolName: name, permissionLevel: perm?.level ?? "read_public", productId: pid, input, resultStatus: "success", safetyNotes: safety.notes });
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-
-      await logCall({
-        toolName: name,
-        permissionLevel: perm?.level ?? "read_public",
-        input,
-        resultStatus: "error",
-        safetyNotes: [...safety.notes, `error: ${errorMessage}`],
-      });
-
-      return {
-        content: [
-          { type: "text" as const, text: JSON.stringify({ error: errorMessage, tool: name }, null, 2) },
-        ],
-        isError: true,
-      };
+      const msg = err instanceof Error ? err.message : String(err);
+      await logCall({ toolName: name, permissionLevel: perm?.level ?? "read_public", input, resultStatus: "error", safetyNotes: [...safety.notes, `error: ${msg}`] });
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: msg, tool: name }, null, 2) }], isError: true };
     }
   });
 
@@ -294,7 +104,7 @@ export async function startServer(): Promise<void> {
   const server = createChantermcpServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("CHANTER MCP Server – Max Edition v0.3.0 started");
-  console.error("Checkpoint: P2 – Dry-Run Proposal & Approval Foundation");
+  console.error("CHANTER MCP Server – Max Edition v0.4.0 started");
+  console.error("Checkpoint: P3A – Operator Approval Bridge");
   console.error("Transport: stdio");
 }
