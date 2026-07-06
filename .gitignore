@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.mcp-audit/
+*.log
+.env
+.mcp-proposals/
