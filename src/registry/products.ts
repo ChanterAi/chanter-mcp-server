@@ -179,7 +179,7 @@ export const CHANTER_PRODUCTS: Record<string, ChantProduct> = {
     displayName: "SafeCommit",
     lane: "internal_control",
     riskLevel: "high",
-    localPath: "apps/SafeCommit",
+    localPath: "apps/chanter-SafeCommit",
     description:
       "Code review, risk scanning, validation, and commit safety tool. Future approval gate before write/commit/deploy actions.",
     allowedReadScopes: ["product:summary", "product:status", "workspace:presence"],
