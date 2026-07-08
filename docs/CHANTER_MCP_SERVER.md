@@ -71,7 +71,7 @@ The CHANTER MCP Server is a **custom, safety-first control layer** for all CHANT
 | Tool | Level | Description |
 |------|-------|-------------|
 | `chanter.get_safecommit_requirements` | read_internal | SafeCommit requirements: triggers, validation checks, blockers |
-| `chanter.attach_safecommit_review` | write_proposed | SafeCommit review: verdict, risk, checks, blockers |
+| `chanter.attach_safecommit_review` | write_proposed | Record a **self-reported** SafeCommit-style verdict, risk, checks, blockers. Advisory only — see warning below. |
 | `chanter.get_proposal_evidence_bundle` | read_internal | Full evidence bundle: proposals, reviews, snapshots |
 
 ---
@@ -117,6 +117,8 @@ draft → pending_approval → approved / rejected / needs_changes
 - founder, operator, safecommit, product_owner, system
 
 ### SafeCommit Review Model
+**⚠️ Self-reported, not a real safety gate.** `chanter.attach_safecommit_review` records whatever `verdict`/`riskLevel` the *caller* supplies — it does not invoke SafeCommit, does not run any validation itself, and does not check that the claimed verdict is accurate. There is currently no code path in this server that calls real SafeCommit. Every reviewer name, verdict, and risk level in this model is caller-asserted metadata. Downstream products and automation (Operator, Loop Governor, or any agent reading a proposal's evidence bundle) **must treat this data as advisory only** and must not use it as proof that a real SafeCommit review occurred, until a genuine SafeCommit integration exists (tracked for P4+).
+
 **Review Statuses**: not_required, required, pending, passed_metadata_only, failed_metadata_only, needs_changes, blocked
 
 **Verdicts**: safe_to_review, needs_changes, blocked, unsafe
@@ -183,6 +185,7 @@ Proposals persisted as individual JSON files in `.mcp-proposals/`. Path-safe IDs
 - No arbitrary command execution
 - All review notes redacted
 - Audit logging on all 17 tools
+- `chanter.attach_safecommit_review` verdicts are self-reported by the caller, not independently verified by a real SafeCommit run — the tool description, permission registry, requirements warning, and stored review event (`selfReported: true`) all say so. Treat as advisory only.
 
 ---
 

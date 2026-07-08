@@ -31,7 +31,14 @@ export interface AttachSafecommitReviewResult {
   reviewStatus?: string;
   verdict?: string;
   executionStatus?: string;
+  // Always present on success. This verdict is caller-supplied, not the
+  // output of a real SafeCommit run — no code path here invokes SafeCommit.
+  // Callers and downstream automation must treat it as advisory only.
+  advisory?: string;
 }
+
+const ADVISORY_NOTICE =
+  "Self-reported by the caller. Not independently verified by a real SafeCommit run. Treat as advisory only, not a safety gate.";
 
 export async function handleAttachSafecommitReview(
   input: AttachSafecommitReviewInput
@@ -74,6 +81,7 @@ export async function handleAttachSafecommitReview(
     notes,
     validationChecks: safeChecks,
     blockers: safeBlockers,
+    selfReported: true,
   };
 
   // Determine review status
@@ -107,5 +115,6 @@ export async function handleAttachSafecommitReview(
     reviewStatus,
     verdict,
     executionStatus: "not_executed",
+    advisory: ADVISORY_NOTICE,
   };
 }

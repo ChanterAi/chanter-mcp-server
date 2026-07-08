@@ -41,6 +41,11 @@ export interface SafecommitReviewEvent {
   notes?: string;
   validationChecks?: ValidationCheck[];
   blockers?: ReviewBlocker[];
+  // Always true: this event records a caller-supplied verdict, not the
+  // output of a real SafeCommit run. No code path in this server invokes
+  // actual SafeCommit. Downstream consumers (including evidence bundles)
+  // must treat this event as advisory only, never as a safety gate.
+  selfReported: true;
 }
 
 export interface SafecommitRequirements {

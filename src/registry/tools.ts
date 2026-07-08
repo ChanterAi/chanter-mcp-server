@@ -63,7 +63,7 @@ export const EXPOSED_TOOLS: McpToolDefinition[] = [
   { name: "chanter.get_safecommit_requirements", description: "Get SafeCommit review requirements. Metadata only.", permissionLevel: "read_internal", parameters: [
     { name: "proposalId", description: "Proposal ID.", type: "string", required: true },
   ]},
-  { name: "chanter.attach_safecommit_review", description: "Attach SafeCommit review metadata. Does NOT commit or execute.", permissionLevel: "write_proposed", parameters: [
+  { name: "chanter.attach_safecommit_review", description: "Attach a SELF-REPORTED SafeCommit review (caller-supplied verdict, not independently verified by a real SafeCommit run — advisory only). Does NOT commit or execute.", permissionLevel: "write_proposed", parameters: [
     { name: "proposalId", description: "Proposal ID.", type: "string", required: true },
     { name: "reviewer", description: "SafeCommit reviewer name.", type: "string", required: true },
     { name: "verdict", description: "safe_to_review, needs_changes, blocked, unsafe.", type: "string", required: true },

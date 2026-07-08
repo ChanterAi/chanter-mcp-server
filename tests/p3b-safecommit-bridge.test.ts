@@ -145,3 +145,43 @@ describe("P3B — Regression", () => {
   });
   it("no write_approved exposed", () => { assert.deepEqual(validateReadOnly(), []); });
 });
+
+// R-01: attach_safecommit_review must never read as a real SafeCommit
+// safety gate. These tests lock in the self-reported/advisory labeling on
+// every surface a caller or downstream consumer could read it from, so a
+// future edit can't silently drop the disclaimer.
+describe("R-01 — SafeCommit review is self-reported, not a real gate", () => {
+  it("tool description in the registry says self-reported/not independently verified", () => {
+    const tool = EXPOSED_TOOLS.find(t => t.name === "chanter.attach_safecommit_review");
+    assert.ok(tool, "tool missing from registry");
+    assert.match(tool!.description, /self-reported/i);
+    assert.match(tool!.description, /not independently verified/i);
+  });
+  it("permission registry description says self-reported/advisory", () => {
+    const perm = PERMISSIONS["chanter.attach_safecommit_review"];
+    assert.match(perm.description, /self-reported/i);
+    assert.match(perm.description, /advisory/i);
+  });
+  it("attach result includes an explicit advisory notice on success", async () => {
+    const c = await handleProposeAction({ productId: "safecommit", actionType: "prepare_commit_review", objective: "R-01 advisory field test" });
+    const r = await handleAttachSafecommitReview({ proposalId: c.proposalId!, reviewer: "SC Bot", verdict: "safe_to_review", riskLevel: "low" });
+    assert.equal(r.success, true);
+    assert.ok(r.advisory, "advisory field missing from result");
+    assert.match(r.advisory!, /self-reported/i);
+    assert.match(r.advisory!, /not independently verified/i);
+  });
+  it("stored review event and evidence bundle carry selfReported: true", async () => {
+    const c = await handleProposeAction({ productId: "safecommit", actionType: "prepare_commit_review", objective: "R-01 selfReported flag test" });
+    await handleAttachSafecommitReview({ proposalId: c.proposalId!, reviewer: "SC Bot", verdict: "safe_to_review", riskLevel: "low" });
+    const bundle = await handleGetProposalEvidenceBundle(c.proposalId!);
+    const latest = (bundle.bundle!.safecommitReview as any).latestVerdict;
+    assert.equal(latest.selfReported, true);
+  });
+  it("get_safecommit_requirements warning says self-reported/not independently verified", async () => {
+    const c = await handleProposeAction({ productId: "safecommit", actionType: "prepare_commit_review", objective: "R-01 warning text test" });
+    const r = await handleGetSafecommitRequirements(c.proposalId!);
+    assert.match(r.warning!, /self-reported/i);
+    assert.match(r.warning!, /not independently verified/i);
+    assert.match(r.warning!, /advisory/i);
+  });
+});

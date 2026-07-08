@@ -60,7 +60,7 @@ export async function handleGetSafecommitRequirements(
     },
     blockers: existingReview?.blockers?.map((b: { message: string }) => b.message) ?? [],
     currentStatus,
-    warning: "SafeCommit review is metadata only. It does NOT authorize commit, push, or execution. All proposals remain not_executed.",
+    warning: "SafeCommit review is metadata only and self-reported by whoever calls attach_safecommit_review — it is NOT independently verified by a real SafeCommit run. It does NOT authorize commit, push, or execution. All proposals remain not_executed. Treat as advisory only, never as a safety gate.",
   };
 }
 
