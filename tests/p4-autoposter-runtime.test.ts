@@ -100,6 +100,10 @@ describe("P4 — Tool registry and permissions", () => {
     const required = tool.parameters.filter(p => p.required).map(p => p.name).sort();
     assert.deepEqual(required, ["accountId", "idempotencyKey", "mediaUrl", "scheduledAtUtc"]);
     assert.ok(tool.parameters.some(p => p.name === "approvedBy"));
+    // Provider selection stays optional: TikTok by default, YouTube opt-in.
+    assert.ok(tool.parameters.some(p => p.name === "provider" && !p.required));
+    assert.ok(tool.parameters.some(p => p.name === "title" && !p.required));
+    assert.ok(tool.parameters.some(p => p.name === "description" && !p.required));
     assert.equal(PERMISSIONS[tool.name]!.level, "write_runtime_gated");
   });
 });
@@ -224,6 +228,43 @@ describe("P4 — end-to-end schedule contract (success path)", () => {
     assert.ok(result.evidence!.evidence.length >= 1);
     assert.ok(result.evidence!.eventLogSummary.some(e => e.type === "TASK_APPROVED"));
     assert.ok(result.startedAt <= result.completedAt);
+  });
+
+  it("a YouTube schedule passes provider/title/description through to the port; MCP stays thin", async () => {
+    const { port, calls } = makePort();
+    configureAutoPosterGatewayForTesting({ port });
+    const result = await handleAutoposterSchedulePost({
+      accountId: "UC-chanter",
+      provider: "youtube",
+      mediaUrl: "https://cdn.example.com/teaser.mp4",
+      scheduledAtUtc: futureIso(),
+      idempotencyKey: "e2e-yt-key-1",
+      title: "Private launch teaser",
+      description: "Supervised test upload",
+      approvedBy: "founder",
+    });
+    assert.equal(result.status, "succeeded");
+    assert.equal(calls.schedulePost, 1);
+    const params = calls.scheduleParams[0] as Record<string, unknown>;
+    assert.equal(params.provider, "youtube");
+    assert.equal(params.title, "Private launch teaser");
+    assert.equal(params.description, "Supervised test upload");
+  });
+
+  it("a YouTube schedule without a title fails in the runtime and never reaches AutoPoster", async () => {
+    const { port, calls } = makePort();
+    configureAutoPosterGatewayForTesting({ port });
+    const result = await handleAutoposterSchedulePost({
+      accountId: "UC-chanter",
+      provider: "youtube",
+      mediaUrl: "https://cdn.example.com/teaser.mp4",
+      scheduledAtUtc: futureIso(),
+      idempotencyKey: "e2e-yt-key-2",
+      approvedBy: "founder",
+    });
+    assert.equal(result.status, "validation_failed");
+    assert.ok(result.errors.some(e => e.code === "MISSING_YOUTUBE_TITLE"));
+    assert.equal(calls.schedulePost, 0);
   });
 
   it("duplicate idempotency key returns duplicate and does not execute twice", async () => {

@@ -135,17 +135,24 @@ export async function handleAutoposterSchedulePost(args: Record<string, unknown>
   const action = AUTOPOSTER_TOOL_ACTIONS["chanter.autoposter_schedule_post"];
   const check = validateArgs(args, {
     accountId: { type: "string", required: true },
+    // Optional publishing provider ("tiktok" | "youtube"; omitted = TikTok).
+    // MCP stays thin: the value is passed through verbatim — the Agent
+    // Runtime and AutoPoster own provider validation and publishing policy.
+    provider: { type: "string", required: false },
     mediaUrl: { type: "string", required: true },
     scheduledAtUtc: { type: "string", required: true },
     idempotencyKey: { type: "string", required: true },
     caption: { type: "string", required: false },
     hashtags: { type: "string", required: false },
+    // YouTube-only metadata (title is required downstream for YouTube).
+    title: { type: "string", required: false },
+    description: { type: "string", required: false },
     approvedBy: { type: "string", required: false },
     approvalNote: { type: "string", required: false },
     requestedBy: { type: "string", required: false },
   });
   if (!check.ok) return schemaRejection(action, check.errors);
-  const { accountId, mediaUrl, scheduledAtUtc, idempotencyKey, caption, hashtags, approvedBy, approvalNote, requestedBy } =
+  const { accountId, provider, mediaUrl, scheduledAtUtc, idempotencyKey, caption, hashtags, title, description, approvedBy, approvalNote, requestedBy } =
     check.values;
 
   // Approval context is passed through; the Agent Runtime decides whether it
@@ -155,10 +162,13 @@ export async function handleAutoposterSchedulePost(args: Record<string, unknown>
     action,
     input: {
       accountId: accountId!,
+      ...(provider !== undefined ? { provider } : {}),
       mediaUrl: mediaUrl!,
       scheduledAt: scheduledAtUtc!,
       ...(caption !== undefined ? { caption } : {}),
       ...(hashtags !== undefined ? { hashtags } : {}),
+      ...(title !== undefined ? { title } : {}),
+      ...(description !== undefined ? { description } : {}),
     },
     accountId: accountId as string,
     idempotencyKey: idempotencyKey as string,
