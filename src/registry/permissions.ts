@@ -1,5 +1,10 @@
-// Permission model – 17 tools: C1(5) + P1(3) + P2(4) + P3A(2) + P3B(3)
-export type PermissionLevel = "read_public" | "read_internal" | "write_proposed" | "write_approved" | "dangerous_forbidden";
+// Permission model – 21 tools: C1(5) + P1(3) + P2(4) + P3A(2) + P3B(3) + P4(4)
+// write_runtime_gated (P4): MCP itself never executes the write — the call is
+// delegated to the Agent Runtime, which enforces its own approval gate,
+// action policy, idempotency, and redaction. Distinct from write_approved
+// (still forbidden): a missing approval returns approval_required, never an
+// execution.
+export type PermissionLevel = "read_public" | "read_internal" | "write_proposed" | "write_runtime_gated" | "write_approved" | "dangerous_forbidden";
 export interface PermissionEntry {
   toolName: string; level: PermissionLevel; description: string;
   requiresAudit: boolean; requiresApproval: boolean; requiresDryRun: boolean;
@@ -23,6 +28,10 @@ export const PERMISSIONS: Record<string, PermissionEntry> = {
   "chanter.get_safecommit_requirements": { toolName: "chanter.get_safecommit_requirements", level: "read_internal", description: "SafeCommit review requirements.", requiresAudit: true, requiresApproval: false, requiresDryRun: false, requiresSafeCommitGate: true, requiresOperatorGate: false },
   "chanter.attach_safecommit_review": { toolName: "chanter.attach_safecommit_review", level: "write_proposed", description: "Attach self-reported SafeCommit review (not independently verified; advisory only).", requiresAudit: true, requiresApproval: true, requiresDryRun: false, requiresSafeCommitGate: true, requiresOperatorGate: false },
   "chanter.get_proposal_evidence_bundle": { toolName: "chanter.get_proposal_evidence_bundle", level: "read_internal", description: "Get evidence bundle. Summaries only.", requiresAudit: true, requiresApproval: false, requiresDryRun: false, requiresSafeCommitGate: false, requiresOperatorGate: false },
+  "chanter.autoposter_list_queue": { toolName: "chanter.autoposter_list_queue", level: "read_internal", description: "List AutoPoster queue via Agent Runtime.", requiresAudit: true, requiresApproval: false, requiresDryRun: false, requiresSafeCommitGate: false, requiresOperatorGate: false },
+  "chanter.autoposter_get_post_status": { toolName: "chanter.autoposter_get_post_status", level: "read_internal", description: "Get AutoPoster post status via Agent Runtime.", requiresAudit: true, requiresApproval: false, requiresDryRun: false, requiresSafeCommitGate: false, requiresOperatorGate: false },
+  "chanter.autoposter_validate_media": { toolName: "chanter.autoposter_validate_media", level: "read_internal", description: "Validate media against AutoPoster's video-only policy via Agent Runtime.", requiresAudit: true, requiresApproval: false, requiresDryRun: false, requiresSafeCommitGate: false, requiresOperatorGate: false },
+  "chanter.autoposter_schedule_post": { toolName: "chanter.autoposter_schedule_post", level: "write_runtime_gated", description: "Schedule one AutoPoster queue item via Agent Runtime (approval-gated, idempotent, never publishes).", requiresAudit: true, requiresApproval: true, requiresDryRun: false, requiresSafeCommitGate: false, requiresOperatorGate: false },
 };
 export function isSafeLevel(level: PermissionLevel): boolean {
   return level === "read_public" || level === "read_internal" || level === "write_proposed";

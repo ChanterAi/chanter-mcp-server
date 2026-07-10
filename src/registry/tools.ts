@@ -1,4 +1,4 @@
-// Tool registry – 17 MCP tools: C1(5) + P1(3) + P2(4) + P3A(2) + P3B(3)
+// Tool registry – 21 MCP tools: C1(5) + P1(3) + P2(4) + P3A(2) + P3B(3) + P4(4 AutoPoster runtime control)
 
 import type { ChantProduct } from "./products.js";
 import type { PermissionLevel } from "./permissions.js";
@@ -74,6 +74,34 @@ export const EXPOSED_TOOLS: McpToolDefinition[] = [
   ]},
   { name: "chanter.get_proposal_evidence_bundle", description: "Complete evidence bundle. Summaries only — no file contents, diffs, or secrets.", permissionLevel: "read_internal", parameters: [
     { name: "proposalId", description: "Proposal ID.", type: "string", required: true },
+  ]},
+  // ── P4: AutoPoster runtime control (every call goes MCP -> Agent Runtime -> AutoPoster adapter; MCP never calls AutoPoster directly) ──
+  { name: "chanter.autoposter_list_queue", description: "List AutoPoster queue items via the Agent Runtime (bounded, redacted, truthful empty vs failure).", permissionLevel: "read_internal", productScope: "autoposter", parameters: [
+    { name: "accountId", description: "Optional publishing channel (TikTok account) scope.", type: "string", required: false },
+    { name: "limit", description: "Max items to return (integer 1-100, default 25).", type: "number", required: false, default: 25 },
+    { name: "requestedBy", description: "Requesting actor identity. Default: mcp-client.", type: "string", required: false },
+  ]},
+  { name: "chanter.autoposter_get_post_status", description: "Get one AutoPoster post's normalized queue/publishing status via the Agent Runtime. Ownership-scoped; not-found is reported truthfully.", permissionLevel: "read_internal", productScope: "autoposter", parameters: [
+    { name: "postId", description: "The AutoPoster post/job ID.", type: "string", required: true },
+    { name: "accountId", description: "Optional publishing channel scope.", type: "string", required: false },
+    { name: "requestedBy", description: "Requesting actor identity. Default: mcp-client.", type: "string", required: false },
+  ]},
+  { name: "chanter.autoposter_validate_media", description: "Validate media against AutoPoster's real video-only TikTok policy via the Agent Runtime. Provide mediaUrl, or fileName/mimeType. Returns valid true/false with a rejection code.", permissionLevel: "read_internal", productScope: "autoposter", parameters: [
+    { name: "mediaUrl", description: "Public HTTPS media URL to check (must point directly at an MP4/MOV/WebM file).", type: "string", required: false },
+    { name: "fileName", description: "Original file name (checked together with mimeType).", type: "string", required: false },
+    { name: "mimeType", description: "MIME type (checked together with fileName).", type: "string", required: false },
+    { name: "requestedBy", description: "Requesting actor identity. Default: mcp-client.", type: "string", required: false },
+  ]},
+  { name: "chanter.autoposter_schedule_post", description: "Schedule one video into the AutoPoster queue via the Agent Runtime. Creates ONE unapproved queue item only — publishing still requires human approval in AutoPoster; this tool can never publish. Requires approvedBy (runtime approval gate) and idempotencyKey (duplicate keys return the existing item).", permissionLevel: "write_runtime_gated", productScope: "autoposter", parameters: [
+    { name: "accountId", description: "Publishing channel (TikTok account) ID. Required.", type: "string", required: true },
+    { name: "mediaUrl", description: "Public HTTPS video URL (MP4/MOV/WebM). Required.", type: "string", required: true },
+    { name: "scheduledAtUtc", description: "ISO-8601 timestamp WITH explicit timezone (e.g. 2026-07-11T09:00:00Z or 2026-07-11T12:00:00+03:00); must be in the future. Required.", type: "string", required: true },
+    { name: "idempotencyKey", description: "Caller-chosen unique key; resubmitting the same key returns the existing queue item instead of creating a duplicate. Required.", type: "string", required: true },
+    { name: "caption", description: "Optional post caption.", type: "string", required: false },
+    { name: "hashtags", description: "Optional hashtags string.", type: "string", required: false },
+    { name: "approvedBy", description: "Human approver identity. Omitting this returns approval_required and nothing executes.", type: "string", required: false },
+    { name: "approvalNote", description: "Optional approval note recorded in evidence.", type: "string", required: false },
+    { name: "requestedBy", description: "Requesting actor identity. Default: mcp-client.", type: "string", required: false },
   ]},
 ];
 

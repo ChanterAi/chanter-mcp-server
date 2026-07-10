@@ -33,7 +33,7 @@ export function checkSafetyPolicy(
   if (perm.level === "write_approved" || perm.level === "dangerous_forbidden") {
     return {
       allowed: false,
-      reason: `Tool "${toolName}" has forbidden permission level: ${perm.level}. Only read_public, read_internal, and write_proposed are allowed in P2.`,
+      reason: `Tool "${toolName}" has forbidden permission level: ${perm.level}. Only read_public, read_internal, write_proposed, and write_runtime_gated are allowed.`,
       notes: ["forbidden permission level"],
     };
   }
@@ -51,6 +51,8 @@ export function checkSafetyPolicy(
   // 4. Policy check passed
   if (perm.level === "write_proposed") {
     notes.push("P2 proposal layer: allowed (dry-run only, no execution)");
+  } else if (perm.level === "write_runtime_gated") {
+    notes.push("P4 runtime-gated write: allowed (execution delegated to Agent Runtime approval/policy/idempotency gates)");
   } else {
     notes.push("read-only checkpoint: allowed");
   }

@@ -40,15 +40,24 @@ describe("Permission Model", () => {
     assert.equal(isSafeLevel("dangerous_forbidden"), false);
   });
 
-  it("all 5 exposed tools have read_public or read_internal level", () => {
+  it("every exposed tool is safe-level or runtime-gated; only the schedule tool is runtime-gated", () => {
     for (const tool of EXPOSED_TOOLS) {
       const perm = PERMISSIONS[tool.name];
       assert.ok(perm, `${tool.name}: no permission entry`);
       assert.ok(
-        isSafeLevel(perm.level),
-        `${tool.name}: level ${perm.level} is not safe`
+        isSafeLevel(perm.level) || perm.level === "write_runtime_gated",
+        `${tool.name}: level ${perm.level} is not allowed`
       );
     }
+    const runtimeGated = EXPOSED_TOOLS.filter(
+      (tool) => PERMISSIONS[tool.name]?.level === "write_runtime_gated"
+    );
+    assert.deepEqual(
+      runtimeGated.map((tool) => tool.name),
+      ["chanter.autoposter_schedule_post"],
+      "write_runtime_gated is reserved for the runtime-gated schedule tool"
+    );
+    assert.equal(PERMISSIONS["chanter.autoposter_schedule_post"]!.requiresApproval, true);
   });
 
   it("future write tool requirements specify all gates", () => {

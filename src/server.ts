@@ -1,5 +1,5 @@
 // CHANTER MCP Server – Main server setup.
-// Checkpoint P3B: SafeCommit Review Bridge. 17 tools total.
+// Checkpoint P4: AutoPoster Runtime Control. 21 tools total.
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -24,11 +24,19 @@ import { handleAttachOperatorReview } from "./tools/attachOperatorReview.js";
 import { handleGetSafecommitRequirements } from "./tools/getSafecommitRequirements.js";
 import { handleAttachSafecommitReview } from "./tools/attachSafecommitReview.js";
 import { handleGetProposalEvidenceBundle } from "./tools/getProposalEvidenceBundle.js";
+import {
+  handleAutoposterListQueue,
+  handleAutoposterGetPostStatus,
+  handleAutoposterValidateMedia,
+  handleAutoposterSchedulePost,
+} from "./tools/autoposterRuntimeTools.js";
+import { isNonErrorStatus } from "./runtime/autoposterGateway.js";
+import type { RuntimeMissionResult } from "chanter-agent-runtime";
 import { logCall } from "./audit/auditLogger.js";
 import { checkSafetyPolicy, rejectionResponse } from "./safety/policy.js";
 
 export function createChantermcpServer(): Server {
-  const server = new Server({ name: "chanter-mcp-server", version: "0.5.0" }, { capabilities: { tools: {} } });
+  const server = new Server({ name: "chanter-mcp-server", version: "0.6.0" }, { capabilities: { tools: {} } });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: EXPOSED_TOOLS.map(t => ({
@@ -52,6 +60,10 @@ export function createChantermcpServer(): Server {
     const perm = PERMISSIONS[name];
     try {
       let result: unknown; let pid: string | undefined; const a = args as Record<string, unknown>;
+      // AutoPoster runtime-control tools: the mission result's truthful
+      // status decides the MCP error flag — a runtime denial/failure/refusal
+      // is NEVER presented as a successful MCP response.
+      let missionResult: RuntimeMissionResult | undefined;
       switch (name) {
         case "chanter.list_products": result = await handleListProducts(); break;
         case "chanter.get_product_status": pid = a.productId as string; if (!pid?.trim()) throw new Error("productId required"); result = await handleGetProductStatus(pid); break;
@@ -70,11 +82,19 @@ export function createChantermcpServer(): Server {
         case "chanter.get_safecommit_requirements": result = await handleGetSafecommitRequirements(a.proposalId as string); break;
         case "chanter.attach_safecommit_review": result = await handleAttachSafecommitReview({ proposalId: a.proposalId as string, reviewer: a.reviewer as string, verdict: a.verdict as string, riskLevel: a.riskLevel as string, notes: typeof a.notes === "string" ? a.notes : undefined, validationChecks: Array.isArray(a.validationChecks) ? a.validationChecks as any : undefined, blockers: Array.isArray(a.blockers) ? a.blockers as any : undefined }); break;
         case "chanter.get_proposal_evidence_bundle": result = await handleGetProposalEvidenceBundle(a.proposalId as string); break;
+        case "chanter.autoposter_list_queue": pid = "autoposter"; missionResult = await handleAutoposterListQueue(a); result = missionResult; break;
+        case "chanter.autoposter_get_post_status": pid = "autoposter"; missionResult = await handleAutoposterGetPostStatus(a); result = missionResult; break;
+        case "chanter.autoposter_validate_media": pid = "autoposter"; missionResult = await handleAutoposterValidateMedia(a); result = missionResult; break;
+        case "chanter.autoposter_schedule_post": pid = "autoposter"; missionResult = await handleAutoposterSchedulePost(a); result = missionResult; break;
         default:
           await logCall({ toolName: name, permissionLevel: "read_public", input, resultStatus: "error", safetyNotes: [`Unknown tool: ${name}`] });
           return { content: [{ type: "text" as const, text: JSON.stringify({ error: `Unknown tool: "${name}"`, knownTools: EXPOSED_TOOLS.map(t => t.name) }, null, 2) }], isError: true };
       }
-      await logCall({ toolName: name, permissionLevel: perm?.level ?? "read_public", productId: pid, input, resultStatus: "success", safetyNotes: safety.notes });
+      if (missionResult && !isNonErrorStatus(missionResult.status)) {
+        await logCall({ toolName: name, permissionLevel: perm?.level ?? "read_public", productId: pid, input, resultStatus: "error", safetyNotes: [...safety.notes, `mission status: ${missionResult.status}`] });
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], isError: true };
+      }
+      await logCall({ toolName: name, permissionLevel: perm?.level ?? "read_public", productId: pid, input, resultStatus: "success", safetyNotes: missionResult ? [...safety.notes, `mission status: ${missionResult.status}`] : safety.notes });
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -88,7 +108,7 @@ export function createChantermcpServer(): Server {
 export async function startServer(): Promise<void> {
   const server = createChantermcpServer();
   await server.connect(new StdioServerTransport());
-  console.error("CHANTER MCP Server – Max Edition v0.5.0 started");
-  console.error("Checkpoint: P3B – SafeCommit Review Bridge");
+  console.error("CHANTER MCP Server – Max Edition v0.6.0 started");
+  console.error("Checkpoint: P4 – AutoPoster Runtime Control");
   console.error("Transport: stdio");
 }

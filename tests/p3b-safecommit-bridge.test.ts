@@ -10,8 +10,8 @@ import { handleAttachSafecommitReview } from "../src/tools/attachSafecommitRevie
 import { handleGetProposalEvidenceBundle } from "../src/tools/getProposalEvidenceBundle.js";
 import { detectSafecommitRequirement } from "../src/safecommit/safecommitTypes.js";
 
-describe("P3B — Tool Registry (17 tools)", () => {
-  it("exposes 17 tools total", () => { assert.equal(EXPOSED_TOOLS.length, 17); });
+describe("P3B — Tool Registry (17 tools + P4's 4 AutoPoster runtime tools)", () => {
+  it("exposes 21 tools total", () => { assert.equal(EXPOSED_TOOLS.length, 21); });
   it("includes P3B tools", () => {
     const n = EXPOSED_TOOLS.map(t => t.name);
     assert.ok(n.includes("chanter.get_safecommit_requirements"));
