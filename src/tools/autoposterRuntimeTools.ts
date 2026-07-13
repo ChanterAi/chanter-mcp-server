@@ -73,18 +73,21 @@ function schemaRejection(action: string, errors: string[]): RuntimeMissionResult
 export async function handleAutoposterListQueue(args: Record<string, unknown>): Promise<RuntimeMissionResult> {
   const action = AUTOPOSTER_TOOL_ACTIONS["chanter.autoposter_list_queue"];
   const check = validateArgs(args, {
+    workspaceId: { type: "string", required: false },
     accountId: { type: "string", required: false },
     limit: { type: "number", required: false },
     requestedBy: { type: "string", required: false },
   });
   if (!check.ok) return schemaRejection(action, check.errors);
-  const { accountId, limit, requestedBy } = check.values;
+  const { workspaceId, accountId, limit, requestedBy } = check.values;
   return executeAutoPosterMission({
     action,
     input: {
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
       ...(accountId !== undefined ? { accountId } : {}),
       ...(limit !== undefined ? { limit } : {}),
     },
+    ...(typeof workspaceId === "string" ? { workspaceId } : {}),
     ...(typeof requestedBy === "string" ? { requestedBy } : {}),
     ...(typeof accountId === "string" ? { accountId } : {}),
   });
@@ -94,14 +97,20 @@ export async function handleAutoposterGetPostStatus(args: Record<string, unknown
   const action = AUTOPOSTER_TOOL_ACTIONS["chanter.autoposter_get_post_status"];
   const check = validateArgs(args, {
     postId: { type: "string", required: true },
+    workspaceId: { type: "string", required: false },
     accountId: { type: "string", required: false },
     requestedBy: { type: "string", required: false },
   });
   if (!check.ok) return schemaRejection(action, check.errors);
-  const { postId, accountId, requestedBy } = check.values;
+  const { postId, workspaceId, accountId, requestedBy } = check.values;
   return executeAutoPosterMission({
     action,
-    input: { postId: postId!, ...(accountId !== undefined ? { accountId } : {}) },
+    input: {
+      postId: postId!,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+      ...(accountId !== undefined ? { accountId } : {}),
+    },
+    ...(typeof workspaceId === "string" ? { workspaceId } : {}),
     ...(typeof requestedBy === "string" ? { requestedBy } : {}),
     ...(typeof accountId === "string" ? { accountId } : {}),
   });
@@ -134,6 +143,7 @@ export async function handleAutoposterValidateMedia(args: Record<string, unknown
 export async function handleAutoposterSchedulePost(args: Record<string, unknown>): Promise<RuntimeMissionResult> {
   const action = AUTOPOSTER_TOOL_ACTIONS["chanter.autoposter_schedule_post"];
   const check = validateArgs(args, {
+    workspaceId: { type: "string", required: false },
     accountId: { type: "string", required: true },
     // Optional publishing provider ("tiktok" | "youtube"; omitted = TikTok).
     // MCP stays thin: the value is passed through verbatim — the Agent
@@ -152,7 +162,7 @@ export async function handleAutoposterSchedulePost(args: Record<string, unknown>
     requestedBy: { type: "string", required: false },
   });
   if (!check.ok) return schemaRejection(action, check.errors);
-  const { accountId, provider, mediaUrl, scheduledAtUtc, idempotencyKey, caption, hashtags, title, description, approvedBy, approvalNote, requestedBy } =
+  const { workspaceId, accountId, provider, mediaUrl, scheduledAtUtc, idempotencyKey, caption, hashtags, title, description, approvedBy, approvalNote, requestedBy } =
     check.values;
 
   // Approval context is passed through; the Agent Runtime decides whether it
@@ -161,6 +171,7 @@ export async function handleAutoposterSchedulePost(args: Record<string, unknown>
   return executeAutoPosterMission({
     action,
     input: {
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
       accountId: accountId!,
       ...(provider !== undefined ? { provider } : {}),
       mediaUrl: mediaUrl!,
@@ -170,6 +181,7 @@ export async function handleAutoposterSchedulePost(args: Record<string, unknown>
       ...(title !== undefined ? { title } : {}),
       ...(description !== undefined ? { description } : {}),
     },
+    ...(typeof workspaceId === "string" ? { workspaceId } : {}),
     accountId: accountId as string,
     idempotencyKey: idempotencyKey as string,
     ...(approvedByName

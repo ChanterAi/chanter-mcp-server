@@ -77,12 +77,14 @@ export const EXPOSED_TOOLS: McpToolDefinition[] = [
   ]},
   // ── P4: AutoPoster runtime control (every call goes MCP -> Agent Runtime -> AutoPoster adapter; MCP never calls AutoPoster directly) ──
   { name: "chanter.autoposter_list_queue", description: "List AutoPoster queue items via the Agent Runtime (bounded, redacted, truthful empty vs failure).", permissionLevel: "read_internal", productScope: "autoposter", parameters: [
+    { name: "workspaceId", description: "Optional AutoPoster workspace scope. AutoPoster resolves membership and entitlements server-side.", type: "string", required: false },
     { name: "accountId", description: "Optional publishing channel (TikTok account) scope.", type: "string", required: false },
     { name: "limit", description: "Max items to return (integer 1-100, default 25).", type: "number", required: false, default: 25 },
     { name: "requestedBy", description: "Requesting actor identity. Default: mcp-client.", type: "string", required: false },
   ]},
   { name: "chanter.autoposter_get_post_status", description: "Get one AutoPoster post's normalized queue/publishing status via the Agent Runtime. Ownership-scoped; not-found is reported truthfully.", permissionLevel: "read_internal", productScope: "autoposter", parameters: [
     { name: "postId", description: "The AutoPoster post/job ID.", type: "string", required: true },
+    { name: "workspaceId", description: "Optional AutoPoster workspace scope. AutoPoster resolves membership and entitlements server-side.", type: "string", required: false },
     { name: "accountId", description: "Optional publishing channel scope.", type: "string", required: false },
     { name: "requestedBy", description: "Requesting actor identity. Default: mcp-client.", type: "string", required: false },
   ]},
@@ -93,6 +95,7 @@ export const EXPOSED_TOOLS: McpToolDefinition[] = [
     { name: "requestedBy", description: "Requesting actor identity. Default: mcp-client.", type: "string", required: false },
   ]},
   { name: "chanter.autoposter_schedule_post", description: "Schedule one video into the AutoPoster queue via the Agent Runtime. Creates ONE unapproved queue item only — publishing still requires human approval in AutoPoster; this tool can never publish. Requires approvedBy (runtime approval gate) and idempotencyKey (duplicate keys return the existing item).", permissionLevel: "write_runtime_gated", productScope: "autoposter", parameters: [
+    { name: "workspaceId", description: "Optional AutoPoster workspace scope. AutoPoster resolves membership, plan, quota, and entitlements server-side.", type: "string", required: false },
     { name: "accountId", description: "Publishing channel ID (TikTok account ID, or YouTube channel ID when provider=youtube). Required.", type: "string", required: true },
     { name: "provider", description: "Optional publishing provider: \"tiktok\" (default) or \"youtube\". YouTube uploads are locked to Private with subscriber notifications disabled.", type: "string", required: false },
     { name: "mediaUrl", description: "Public HTTPS video URL (MP4/MOV/WebM). Required.", type: "string", required: true },

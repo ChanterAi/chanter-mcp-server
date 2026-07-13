@@ -31,6 +31,7 @@ export interface AutoPosterMissionInput {
   action: string;
   input: Record<string, JsonValue>;
   requestedBy?: string;
+  workspaceId?: string;
   accountId?: string;
   approval?: RuntimeMissionApproval;
   idempotencyKey?: string;
@@ -88,7 +89,11 @@ export async function executeAutoPosterMission(request: AutoPosterMissionInput):
     product: "auto_poster",
     action: request.action,
     actor: { id: request.requestedBy?.trim() || "mcp-client", kind: "agent" },
-    tenant: { userId: tenantUserId(), ...(request.accountId ? { accountId: request.accountId } : {}) },
+    tenant: {
+      userId: tenantUserId(),
+      ...(request.workspaceId?.trim() ? { workspaceId: request.workspaceId.trim() } : {}),
+      ...(request.accountId ? { accountId: request.accountId } : {}),
+    },
     input: request.input,
     ...(request.approval ? { approval: request.approval } : {}),
     ...(request.idempotencyKey ? { idempotencyKey: request.idempotencyKey } : {}),

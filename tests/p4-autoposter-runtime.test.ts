@@ -34,18 +34,30 @@ interface PortCalls {
   getPostStatus: number;
   validateMedia: number;
   schedulePost: number;
+  listParams: unknown[];
+  statusParams: unknown[];
   scheduleParams: unknown[];
 }
 
 function makePort(overrides: Partial<AutoPosterOperationsPort> = {}): { port: AutoPosterOperationsPort; calls: PortCalls } {
-  const calls: PortCalls = { listQueue: 0, getPostStatus: 0, validateMedia: 0, schedulePost: 0, scheduleParams: [] };
+  const calls: PortCalls = {
+    listQueue: 0,
+    getPostStatus: 0,
+    validateMedia: 0,
+    schedulePost: 0,
+    listParams: [],
+    statusParams: [],
+    scheduleParams: [],
+  };
   const port: AutoPosterOperationsPort = {
     async listQueue(params) {
       calls.listQueue += 1;
+      calls.listParams.push(params);
       return { ok: true, items: [], count: 0, scope: { accountId: params.accountId ?? "all" } };
     },
     async getPostStatus(params) {
       calls.getPostStatus += 1;
+      calls.statusParams.push(params);
       return {
         ok: true,
         post: {
@@ -106,6 +118,18 @@ describe("P4 — Tool registry and permissions", () => {
     assert.ok(tool.parameters.some(p => p.name === "description" && !p.required));
     assert.equal(PERMISSIONS[tool.name]!.level, "write_runtime_gated");
   });
+  it("declares workspaceId only on workspace-scoped list, status, and schedule tools", () => {
+    for (const name of [
+      "chanter.autoposter_list_queue",
+      "chanter.autoposter_get_post_status",
+      "chanter.autoposter_schedule_post",
+    ]) {
+      const tool = EXPOSED_TOOLS.find(candidate => candidate.name === name)!;
+      assert.ok(tool.parameters.some(parameter => parameter.name === "workspaceId" && !parameter.required), name);
+    }
+    const media = EXPOSED_TOOLS.find(candidate => candidate.name === "chanter.autoposter_validate_media")!;
+    assert.equal(media.parameters.some(parameter => parameter.name === "workspaceId"), false);
+  });
 });
 
 describe("P4 — MCP goes through the Agent Runtime, never AutoPoster directly", () => {
@@ -142,6 +166,64 @@ describe("P4 — schema validation", () => {
     assert.equal(wrongType.status, "validation_failed");
     const noMedia = await handleAutoposterValidateMedia({});
     assert.equal(noMedia.status, "validation_failed");
+  });
+  it("rejects caller-supplied plan, quota, and entitlement claims before mission creation", async () => {
+    const { port, calls } = makePort();
+    configureAutoPosterGatewayForTesting({ port });
+
+    const claimedPlan = await handleAutoposterListQueue({ planId: "studio" });
+    const claimedQuota = await handleAutoposterGetPostStatus({ postId: "post-1", quota: 999_999 });
+    const claimedEntitlements = await handleAutoposterSchedulePost({
+      accountId: "account-a",
+      mediaUrl: "https://cdn.example.com/launch.mp4",
+      scheduledAtUtc: futureIso(),
+      idempotencyKey: "caller-commercial-claim",
+      approvedBy: "founder",
+      entitlements: { monthlyPosts: 999_999 },
+    });
+
+    for (const result of [claimedPlan, claimedQuota, claimedEntitlements]) {
+      assert.equal(result.status, "validation_failed");
+      assert.equal(result.missionId, "not-created");
+      assert.ok(result.errors.some(error => error.code === "SCHEMA_VALIDATION_FAILED"));
+    }
+    assert.deepEqual(
+      { listQueue: calls.listQueue, getPostStatus: calls.getPostStatus, schedulePost: calls.schedulePost },
+      { listQueue: 0, getPostStatus: 0, schedulePost: 0 },
+    );
+  });
+});
+
+describe("P4 — workspace context parity", () => {
+  it("propagates optional workspaceId through MCP mission tenant/input to list, status, and schedule ports", async () => {
+    const { port, calls } = makePort();
+    configureAutoPosterGatewayForTesting({ port });
+
+    const list = await handleAutoposterListQueue({ workspaceId: "workspace-a", limit: 10 });
+    const status = await handleAutoposterGetPostStatus({ workspaceId: "workspace-a", postId: "post-1" });
+    const schedule = await handleAutoposterSchedulePost({
+      workspaceId: "workspace-a",
+      accountId: "account-a",
+      mediaUrl: "https://cdn.example.com/launch.mp4",
+      scheduledAtUtc: futureIso(),
+      idempotencyKey: "workspace-propagation-1",
+      approvedBy: "founder",
+    });
+
+    assert.equal(list.status, "succeeded");
+    assert.equal(status.status, "succeeded");
+    assert.equal(schedule.status, "succeeded");
+    assert.equal((calls.listParams[0] as Record<string, unknown>).workspaceId, "workspace-a");
+    assert.equal((calls.statusParams[0] as Record<string, unknown>).workspaceId, "workspace-a");
+    assert.equal((calls.scheduleParams[0] as Record<string, unknown>).workspaceId, "workspace-a");
+  });
+
+  it("keeps legacy calls valid when workspaceId is omitted", async () => {
+    const { port, calls } = makePort();
+    configureAutoPosterGatewayForTesting({ port });
+    const result = await handleAutoposterListQueue({ limit: 1 });
+    assert.equal(result.status, "succeeded");
+    assert.equal(Object.hasOwn(calls.listParams[0] as object, "workspaceId"), false);
   });
 });
 
@@ -287,6 +369,42 @@ describe("P4 — end-to-end schedule contract (success path)", () => {
     assert.equal(calls.schedulePost, 1, "the second mission never executed");
   });
 
+  it("does not replay an idempotency result across workspace boundaries", async () => {
+    const { port, calls } = makePort({
+      async schedulePost(params) {
+        calls.schedulePost += 1;
+        calls.scheduleParams.push(params);
+        return {
+          ok: true,
+          duplicate: false,
+          post: {
+            id: `queue-${params.workspaceId}`,
+            accountId: params.accountId,
+            status: "scheduled",
+            scheduledAt: params.scheduledAt,
+            approved: false,
+          },
+        };
+      },
+    });
+    configureAutoPosterGatewayForTesting({ port });
+    const base = {
+      accountId: "account-a",
+      mediaUrl: "https://cdn.example.com/launch.mp4",
+      scheduledAtUtc: futureIso(),
+      idempotencyKey: "same-caller-key",
+      approvedBy: "founder",
+    };
+
+    const first = await handleAutoposterSchedulePost({ ...base, workspaceId: "workspace-a" });
+    const second = await handleAutoposterSchedulePost({ ...base, workspaceId: "workspace-b" });
+
+    assert.equal(first.status, "succeeded");
+    assert.equal(second.status, "succeeded");
+    assert.equal(calls.schedulePost, 2);
+    assert.equal((second.output as { post: { id: string } }).post.id, "queue-workspace-b");
+  });
+
   it("missing approval maps to approval_required and never reaches AutoPoster", async () => {
     const { port, calls } = makePort();
     configureAutoPosterGatewayForTesting({ port });
@@ -342,6 +460,108 @@ describe("P4 — end-to-end schedule contract (failure path)", () => {
     });
     assert.equal(result.status, "denied");
     assert.equal(isNonErrorStatus(result.status), false);
+  });
+
+  it("preserves safe structured commercial denial facts without turning the denial into success", async () => {
+    const { port } = makePort({
+      async schedulePost() {
+        return {
+          ok: false,
+          code: "forbidden",
+          message: "Monthly scheduling limit reached.",
+          details: {
+            reasonCode: "monthly_post_limit_reached",
+            current: 10,
+            limit: 10,
+            remaining: 0,
+            planId: "starter",
+            workspaceId: "workspace-a",
+          },
+        };
+      },
+    });
+    configureAutoPosterGatewayForTesting({ port });
+    const result = await handleAutoposterSchedulePost({
+      workspaceId: "workspace-a",
+      accountId: "account-a",
+      mediaUrl: "https://cdn.example.com/launch.mp4",
+      scheduledAtUtc: futureIso(),
+      idempotencyKey: "commercial-denial-1",
+      approvedBy: "founder",
+    });
+
+    assert.equal(result.status, "denied");
+    assert.equal(isNonErrorStatus(result.status), false);
+    assert.equal(result.errors[0]!.code, "AUTOPOSTER_FORBIDDEN");
+    assert.deepEqual(result.output, {
+      reasonCode: "monthly_post_limit_reached",
+      current: 10,
+      limit: 10,
+      remaining: 0,
+      planId: "starter",
+      workspaceId: "workspace-a",
+    });
+    assert.equal(JSON.stringify(result).includes('"status":"succeeded"'), false);
+  });
+
+  it("a commercial denial stays an MCP error on replay and can succeed after server truth changes", async () => {
+    let allow = false;
+    const { port, calls } = makePort({
+      async schedulePost(params) {
+        calls.schedulePost += 1;
+        calls.scheduleParams.push(params);
+        if (!allow) {
+          return {
+            ok: false,
+            code: "forbidden",
+            message: "Monthly scheduling limit reached.",
+            details: {
+              reasonCode: "monthly_post_limit_reached",
+              current: 10,
+              limit: 10,
+              remaining: 0,
+              planId: "starter",
+              workspaceId: "workspace-a",
+            },
+          };
+        }
+        return {
+          ok: true,
+          duplicate: false,
+          post: {
+            id: "queue-after-quota-reset",
+            accountId: params.accountId,
+            status: "scheduled",
+            scheduledAt: params.scheduledAt,
+            approved: false,
+          },
+        };
+      },
+    });
+    configureAutoPosterGatewayForTesting({ port });
+    const args = {
+      workspaceId: "workspace-a",
+      accountId: "account-a",
+      mediaUrl: "https://cdn.example.com/launch.mp4",
+      scheduledAtUtc: futureIso(),
+      idempotencyKey: "commercial-denial-retry",
+      approvedBy: "founder",
+    };
+
+    const first = await handleAutoposterSchedulePost(args);
+    const repeatedDenial = await handleAutoposterSchedulePost(args);
+    allow = true;
+    const recovered = await handleAutoposterSchedulePost(args);
+    const duplicateSuccess = await handleAutoposterSchedulePost(args);
+
+    assert.equal(first.status, "denied");
+    assert.equal(repeatedDenial.status, "denied");
+    assert.equal(isNonErrorStatus(repeatedDenial.status), false);
+    assert.equal(repeatedDenial.errors[0]!.code, "AUTOPOSTER_FORBIDDEN");
+    assert.equal(recovered.status, "succeeded");
+    assert.equal((recovered.output as { post: { id: string } }).post.id, "queue-after-quota-reset");
+    assert.equal(duplicateSuccess.status, "duplicate");
+    assert.equal(calls.schedulePost, 3, "denials remain retryable; only the accepted result is cached");
   });
 
   it("evidence and errors are redacted — no secrets survive into the MCP response", async () => {
