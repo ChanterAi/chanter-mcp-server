@@ -75,7 +75,7 @@ export const EXPOSED_TOOLS: McpToolDefinition[] = [
   { name: "chanter.get_proposal_evidence_bundle", description: "Complete evidence bundle. Summaries only — no file contents, diffs, or secrets.", permissionLevel: "read_internal", parameters: [
     { name: "proposalId", description: "Proposal ID.", type: "string", required: true },
   ]},
-  // ── P4: AutoPoster runtime control (every call goes MCP -> Agent Runtime -> AutoPoster adapter; MCP never calls AutoPoster directly) ──
+  // AutoPoster reads use Runtime directly; the schedule write must use Operator authority first.
   { name: "chanter.autoposter_list_queue", description: "List AutoPoster queue items via the Agent Runtime (bounded, redacted, truthful empty vs failure).", permissionLevel: "read_internal", productScope: "autoposter", parameters: [
     { name: "workspaceId", description: "Optional AutoPoster workspace scope. AutoPoster resolves membership and entitlements server-side.", type: "string", required: false },
     { name: "accountId", description: "Optional publishing channel (TikTok account) scope.", type: "string", required: false },
@@ -94,7 +94,7 @@ export const EXPOSED_TOOLS: McpToolDefinition[] = [
     { name: "mimeType", description: "MIME type (checked together with fileName).", type: "string", required: false },
     { name: "requestedBy", description: "Requesting actor identity. Default: mcp-client.", type: "string", required: false },
   ]},
-  { name: "chanter.autoposter_schedule_post", description: "Schedule one video into the AutoPoster queue via the Agent Runtime. Creates ONE unapproved queue item only — publishing still requires human approval in AutoPoster; this tool can never publish. Requires approvedBy (runtime approval gate) and idempotencyKey (duplicate keys return the existing item).", permissionLevel: "write_runtime_gated", productScope: "autoposter", parameters: [
+  { name: "chanter.autoposter_schedule_post", description: "Submit one schedule mission to the loopback Operator Mission Gateway. Operator owns durable identity and replay; independent human/Operator control approval is required before execution. This tool cannot approve or publish.", permissionLevel: "write_runtime_gated", productScope: "autoposter", parameters: [
     { name: "workspaceId", description: "Optional AutoPoster workspace scope. AutoPoster resolves membership, plan, quota, and entitlements server-side.", type: "string", required: false },
     { name: "accountId", description: "Publishing channel ID (TikTok account ID, or YouTube channel ID when provider=youtube). Required.", type: "string", required: true },
     { name: "provider", description: "Optional publishing provider: \"tiktok\" (default) or \"youtube\". YouTube uploads are locked to Private with subscriber notifications disabled.", type: "string", required: false },
@@ -105,9 +105,9 @@ export const EXPOSED_TOOLS: McpToolDefinition[] = [
     { name: "hashtags", description: "Optional hashtags string.", type: "string", required: false },
     { name: "title", description: "YouTube video title. Required when provider=youtube; never auto-derived from the caption.", type: "string", required: false },
     { name: "description", description: "Optional YouTube video description.", type: "string", required: false },
-    { name: "approvedBy", description: "Human approver identity. Omitting this returns approval_required and nothing executes.", type: "string", required: false },
-    { name: "approvalNote", description: "Optional approval note recorded in evidence.", type: "string", required: false },
     { name: "requestedBy", description: "Requesting actor identity. Default: mcp-client.", type: "string", required: false },
+    { name: "missionId", description: "Optional stable Operator mission ID. Reuse it for exact retries of the same logical mission.", type: "string", required: false },
+    { name: "traceId", description: "Optional stable trace ID preserved through Operator, Runtime, and evidence lineage.", type: "string", required: false },
   ]},
 ];
 

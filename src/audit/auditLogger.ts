@@ -2,12 +2,15 @@
 // Stores in .mcp-audit/audit.jsonl within the MCP server package.
 
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { AuditEvent, AuditResultStatus } from "./auditTypes.js";
 import { generateRequestId, sanitizeInput } from "./auditTypes.js";
 import { redactSensitiveValues } from "../safety/redaction.js";
 
-const AUDIT_DIR = join(import.meta.dirname!, "..", "..", ".mcp-audit");
+const AUDIT_DIR = resolve(
+  process.env.CHANTER_MCP_AUDIT_DIR?.trim()
+    || join(import.meta.dirname!, "..", "..", ".mcp-audit"),
+);
 
 function ensureAuditDir(): void {
   if (!existsSync(AUDIT_DIR)) {

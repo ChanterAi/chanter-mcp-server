@@ -52,7 +52,7 @@ export function checkSafetyPolicy(
   if (perm.level === "write_proposed") {
     notes.push("P2 proposal layer: allowed (dry-run only, no execution)");
   } else if (perm.level === "write_runtime_gated") {
-    notes.push("P4 runtime-gated write: allowed (execution delegated to Agent Runtime approval/policy/idempotency gates)");
+    notes.push("runtime-gated write: allowed only through Operator durable authority before Agent Runtime execution");
   } else {
     notes.push("read-only checkpoint: allowed");
   }

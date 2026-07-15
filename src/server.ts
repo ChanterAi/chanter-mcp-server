@@ -60,9 +60,9 @@ export function createChantermcpServer(): Server {
     const perm = PERMISSIONS[name];
     try {
       let result: unknown; let pid: string | undefined; const a = args as Record<string, unknown>;
-      // AutoPoster runtime-control tools: the mission result's truthful
-      // status decides the MCP error flag — a runtime denial/failure/refusal
-      // is NEVER presented as a successful MCP response.
+      // AutoPoster reads use Runtime directly; the schedule write uses
+      // Operator authority first. Truthful mission status decides the MCP
+      // error flag, so denial/failure/refusal never appears as success.
       let missionResult: RuntimeMissionResult | undefined;
       switch (name) {
         case "chanter.list_products": result = await handleListProducts(); break;

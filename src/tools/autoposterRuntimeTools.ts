@@ -1,11 +1,8 @@
 // chanter.autoposter_* — the four AutoPoster runtime control tools.
 //
-// Each handler does exactly three things: strict argument validation,
-// mission construction, and a call into the Agent Runtime gateway. All
-// policy/approval/idempotency/redaction/evidence behavior lives in
-// chanter-agent-runtime; all queue/media/ownership/scheduling behavior
-// lives in AutoPoster. Handlers never fabricate success — the runtime's
-// truthful mission status is returned verbatim.
+// Each handler validates arguments and calls the AutoPoster gateway. The three
+// read actions use Agent Runtime directly. The schedule write must go through
+// Operator's durable mission authority before Runtime and AutoPoster.
 
 import type { JsonValue, RuntimeMissionResult } from "chanter-agent-runtime";
 import { executeAutoPosterMission } from "../runtime/autoposterGateway.js";
@@ -20,6 +17,7 @@ export const AUTOPOSTER_TOOL_ACTIONS = {
 interface FieldSpec {
   type: "string" | "number";
   required: boolean;
+  preserveBlank?: boolean;
 }
 
 /** Strict schema check: required fields present, types correct, unknown fields rejected. */
@@ -34,12 +32,17 @@ function validateArgs(
   }
   for (const [key, spec] of Object.entries(fields)) {
     const value = args[key];
-    if (value === undefined || value === null || (typeof value === "string" && !value.trim())) {
+    if (value === undefined || value === null) {
       if (spec.required) errors.push(`"${key}" is required.`);
       continue;
     }
     if (typeof value !== spec.type) {
       errors.push(`"${key}" must be a ${spec.type}.`);
+      continue;
+    }
+    if (typeof value === "string" && !value.trim()) {
+      if (spec.required) errors.push(`"${key}" is required.`);
+      else if (spec.preserveBlank) values[key] = value;
       continue;
     }
     values[key] = value as JsonValue;
@@ -157,17 +160,15 @@ export async function handleAutoposterSchedulePost(args: Record<string, unknown>
     // YouTube-only metadata (title is required downstream for YouTube).
     title: { type: "string", required: false },
     description: { type: "string", required: false },
-    approvedBy: { type: "string", required: false },
-    approvalNote: { type: "string", required: false },
     requestedBy: { type: "string", required: false },
+    missionId: { type: "string", required: false, preserveBlank: true },
+    traceId: { type: "string", required: false, preserveBlank: true },
   });
   if (!check.ok) return schemaRejection(action, check.errors);
-  const { workspaceId, accountId, provider, mediaUrl, scheduledAtUtc, idempotencyKey, caption, hashtags, title, description, approvedBy, approvalNote, requestedBy } =
+  const { workspaceId, accountId, provider, mediaUrl, scheduledAtUtc, idempotencyKey, caption, hashtags, title, description, requestedBy, missionId, traceId } =
     check.values;
 
-  // Approval context is passed through; the Agent Runtime decides whether it
-  // satisfies the gate. No approvedBy -> the runtime returns approval_required.
-  const approvedByName = typeof approvedBy === "string" ? approvedBy.trim() : "";
+  // Submission only. Independent Operator control must approve before execution.
   return executeAutoPosterMission({
     action,
     input: {
@@ -184,15 +185,8 @@ export async function handleAutoposterSchedulePost(args: Record<string, unknown>
     ...(typeof workspaceId === "string" ? { workspaceId } : {}),
     accountId: accountId as string,
     idempotencyKey: idempotencyKey as string,
-    ...(approvedByName
-      ? {
-          approval: {
-            approved: true,
-            approvedBy: approvedByName,
-            ...(typeof approvalNote === "string" ? { note: approvalNote } : {}),
-          },
-        }
-      : {}),
     ...(typeof requestedBy === "string" ? { requestedBy } : {}),
+    ...(typeof missionId === "string" ? { missionId } : {}),
+    ...(typeof traceId === "string" ? { traceId } : {}),
   });
 }

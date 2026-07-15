@@ -1,14 +1,14 @@
 # CHANTER MCP Server — Max Edition
 
-**v0.6.0 — Checkpoints C1 through P3B Complete; P4 (AutoPoster Runtime Control) implemented and documented. P4 validation was not rerun in this documentation pass.**
+**v0.6.0 — Checkpoints C1 through P3B Complete; P4 AutoPoster reads use Agent Runtime and the production-impacting schedule write uses Operator durable authority.**
 
-> Built for CHANTER internal use only. 21 MCP tools (verified by direct count of `src/registry/permissions.ts`). 154 tests recorded through the P3B checkpoint; P4 (AutoPoster Runtime Control) adds its own dedicated test file (`tests/p4-autoposter-runtime.test.ts`), not re-tallied into this total in this pass — see Limitations.
+> Built for CHANTER internal use only. 21 MCP tools and 208 passing tests in the complete isolated suite recorded on 2026-07-15.
 
 ---
 
 ## Purpose
 
-The CHANTER MCP Server is a **custom, safety-first control layer** for all CHANTER products. It exposes controlled, auditable tools through the Model Context Protocol (MCP), enabling AI assistants to inspect CHANTER systems, create dry-run proposals, and manage structured approval workflows. Almost all tools grant no write access, execution access, or secret access. The one documented exception is `chanter.autoposter_schedule_post` (see "P4 — AutoPoster Runtime Control"), which performs a real, approval-gated AutoPoster queue-scheduling write through `chanter-agent-runtime` and never touches secrets.
+The CHANTER MCP Server is a **custom, safety-first control layer** for all CHANTER products. It exposes controlled, auditable tools through the Model Context Protocol (MCP), enabling AI assistants to inspect CHANTER systems, create dry-run proposals, and manage structured approval workflows. Almost all tools grant no write access, execution access, or secret access. The one documented exception is `chanter.autoposter_schedule_post` (see "P4 — AutoPoster Runtime Control"), which submits a real schedule mission to the loopback Operator Mission Gateway. Operator owns durable identity, approval, replay, and downstream Runtime execution; MCP is only the thin client.
 
 ## Checkpoint History
 
@@ -19,7 +19,7 @@ The CHANTER MCP Server is a **custom, safety-first control layer** for all CHANT
 | P2 | 0.3.0 | 12 | Dry-run proposals, risk classification, human review |
 | P3A | 0.4.0 | 14 | Operator approval bridge, approval routes, evidence bundles |
 | P3B | 0.5.0 | 17 | SafeCommit review bridge, evidence bundles |
-| **P4** | **0.6.0** | **21** | **AutoPoster Runtime Control — one real, approval-gated write tool (`chanter.autoposter_schedule_post`) that executes through `chanter-agent-runtime`; see "AutoPoster Runtime Control" below** |
+| **P4** | **0.6.0** | **21** | **Three AutoPoster reads through Agent Runtime plus one approval-gated schedule write through Operator durable authority** |
 
 ---
 
@@ -76,16 +76,16 @@ The CHANTER MCP Server is a **custom, safety-first control layer** for all CHANT
 | `chanter.get_proposal_evidence_bundle` | read_internal | Full evidence bundle: proposals, reviews, snapshots |
 
 ### P4 — AutoPoster Runtime Control (4 tools)
-Unlike every tool above, these four do not go through the Proposal Store. They call through a dedicated gateway (`src/runtime/autoposterGateway.ts`) into `chanter-agent-runtime`'s real mission executor, which in turn reaches AutoPoster's token-guarded `/api/runtime/*` routes. Three of the four are real reads (no mutation); one is a real, approval-gated write.
+Unlike every tool above, these four do not go through the Proposal Store. The gateway (`src/runtime/autoposterGateway.ts`) has an explicit three-action read allowlist that executes through `chanter-agent-runtime`. The schedule write is routed only to the loopback Operator Mission Gateway; MCP does not own write idempotency, approval state, durable records, or downstream execution.
 
 | Tool | Level | Description |
 |------|-------|-------------|
 | `chanter.autoposter_list_queue` | read_internal | List AutoPoster queue items via the Agent Runtime. Real read, no mutation. |
 | `chanter.autoposter_get_post_status` | read_internal | Get one post's normalized queue/publishing status via the Agent Runtime. Real read, no mutation. |
 | `chanter.autoposter_validate_media` | read_internal | Validate media against AutoPoster's real video-only policy via the Agent Runtime. Real read, no mutation. |
-| `chanter.autoposter_schedule_post` | **write_runtime_gated** | Schedules one video into the AutoPoster queue via the Agent Runtime. **This is a real write** — it creates one unapproved AutoPoster queue item. The MCP server does not write directly to AutoPoster storage. The MCP tool initiates a real delegated scheduling action through `chanter-agent-runtime`, which owns execution and approval controls (no `approvedBy` → the runtime returns `approval_required`, nothing is created), action policy, idempotency, and redaction. This tool can never publish — publishing still requires AutoPoster's own separate, later human approval. |
+| `chanter.autoposter_schedule_post` | **write_runtime_gated** | Submits one schedule mission to Operator and cannot approve it. Optional stable `missionId` and `traceId` are forwarded unchanged; `requestedBy` defaults to `mcp-client`. A new submission returns `201`/`replayed:false` as `approval_required` with zero downstream writes; an exact replay returns `200`/`replayed:true`; a binding mismatch returns typed `409` with no prior result/evidence leakage. An independent human/Operator control must approve before Operator may delegate the downstream Agent Runtime write, which creates at most one unapproved queue item and can never publish. |
 
-See `apps\chanter-agent-runtime\docs\AUTOPOSTER_CONTROL_LOOP.md` for the full architecture flow and the two-checkpoint approval chain (runtime scheduling approval, then AutoPoster publish approval).
+See `apps\chanter-agent-runtime\docs\AUTOPOSTER_CONTROL_LOOP.md` for the downstream Runtime/AutoPoster adapter contract and the separate AutoPoster publish-approval checkpoint.
 
 ---
 
@@ -96,7 +96,7 @@ See `apps\chanter-agent-runtime\docs\AUTOPOSTER_CONTROL_LOOP.md` for the full ar
 | `read_public` | ✅ | Safe for any consumer |
 | `read_internal` | ✅ | Internal read, no secrets |
 | `write_proposed` | ✅ P2+ | Dry-run proposals and metadata-only reviews — never executed |
-| `write_runtime_gated` | ✅ P4 | Real write. The MCP server does not write directly to AutoPoster storage — the MCP tool initiates a real delegated scheduling action through `chanter-agent-runtime`, which owns execution, approval, policy, idempotency, and redaction. Used by exactly one tool: `chanter.autoposter_schedule_post`. Distinct from `write_approved` below. |
+| `write_runtime_gated` | ✅ P4 | Real write intent accepted only through Operator durable authority. MCP is a loopback thin client; Operator owns mission identity, approval, replay, and delegation to Agent Runtime. Used by exactly one tool: `chanter.autoposter_schedule_post`. |
 | `write_approved` | ❌ | Still fully blocked — no tool in the registry uses this level |
 | `dangerous_forbidden` | ❌ | Permanently blocked |
 
@@ -143,8 +143,16 @@ draft → pending_approval → approved / rejected / needs_changes
 - `productId` is `safecommit`
 - Keywords: code, commit, validation, git, repo, build, test, deploy, release, push, diff, review, patch, merge, branch
 
-### Runtime Approval Gate (P4, AutoPoster scheduling only)
-Separate from the Operator/SafeCommit review routes above. `chanter.autoposter_schedule_post` passes an optional `approvedBy`/`approvalNote` through to `chanter-agent-runtime` verbatim; the runtime — not MCP — decides whether that context satisfies its approval gate. No `approvedBy` means the runtime returns `approval_required` and creates nothing. A satisfied runtime approval authorizes **scheduling execution only**: it creates one unapproved AutoPoster queue item. It does not authorize, and cannot trigger, AutoPoster's own separate publish step — that remains a later, independent human checkpoint inside AutoPoster.
+### Operator Runtime Approval Gate (P4, AutoPoster scheduling only)
+Separate from the metadata-only proposal review routes above. `chanter.autoposter_schedule_post` creates or exactly replays a durable Operator mission. Every new MCP submission remains `approval_required` and performs zero downstream writes. The MCP schema has no approval field, the handler does not map approval data, and the production Operator client never calls an approval endpoint. Approval belongs to an independent human/Operator control capability outside MCP; after that control persists approval and Operator delegates execution, an exact MCP replay can truthfully return the durable result and approval lineage. Raw exact replay never retries a denied write. Recovery from a non-success result requires an explicit governed reconcile/resume action outside this MCP create path. Approval authorizes scheduling only: it cannot trigger AutoPoster's later publish step.
+
+### Operator Client Configuration
+- `OPERATOR_BASE_URL` — required for schedule writes; must be a plain HTTP loopback origin (`127.0.0.1`, `localhost`, or `::1`) with no path, credentials, query, or fragment
+- `OPERATOR_MISSION_SUBMIT_TOKEN` — required submission-only capability token sent only to Operator; do not configure an Operator approval/control token in MCP
+- `OPERATOR_TIMEOUT_MS` — optional positive timeout; default 30 seconds
+- `CHANTER_MCP_PROPOSALS_DIR` / `CHANTER_MCP_AUDIT_DIR` — optional storage-root overrides used for isolated test and operator-controlled runs; existing defaults remain unchanged
+
+The client rejects redirects on submission requests. Successful responses are accepted only when the outer durable mission and nested Runtime result match the requested identity, scope, actor, payload, action, idempotency binding, and array contracts; invalid responses fail closed without output or evidence.
 
 ### Evidence Bundle
 Contains: proposal summary, product metadata, risk classification, operator reviews, SafeCommit reviews, human reviews, git/validation/readiness snapshots (available flags only). No file contents, no diffs, no secrets, no raw logs. (The AutoPoster Runtime Control tools above use a separate `RuntimeMissionResult`/evidence shape, not this bundle — see `chanter-agent-runtime`'s own evidence documentation.)
@@ -196,8 +204,8 @@ Proposals persisted as individual JSON files in `.mcp-proposals/`. Path-safe IDs
 
 - Proposal Store tools: `executionStatus` always `not_executed`
 - `write_approved` still fully blocked — no tool uses it
-- Exactly one tool, `chanter.autoposter_schedule_post` (`write_runtime_gated`), performs a real write: it creates one unapproved AutoPoster queue item via `chanter-agent-runtime`, gated by that runtime's own approval requirement. It cannot commit, push, deploy, publish, or delete, and cannot bypass AutoPoster's own separate publish approval.
-- No external API calls originate from MCP itself (TikTok, Vercel, Render, etc.) — the AutoPoster Runtime Control tools call `chanter-agent-runtime` only, never a third-party provider directly
+- Exactly one tool, `chanter.autoposter_schedule_post` (`write_runtime_gated`), can submit a request for a real write. It must go through loopback Operator authority, which durably owns identity, approval, replay, and downstream execution. MCP cannot approve and never calls the AutoPoster write port.
+- No external provider API calls originate from MCP itself. Reads call Agent Runtime; the schedule write calls loopback Operator only.
 - No secret/.env exposure
 - No arbitrary command execution
 - All review notes redacted
@@ -209,9 +217,9 @@ Proposals persisted as individual JSON files in `.mcp-proposals/`. Path-safe IDs
 ## Limitations (Current)
 
 - The dry-run Proposal Store (`chanter.propose_action`, `chanter.review_proposal`, Operator/SafeCommit review attachments) has no execution capability — those proposals remain metadata only.
-- One exception exists: `chanter.autoposter_schedule_post` performs real, approval-gated AutoPoster queue-scheduling through `chanter-agent-runtime`. See "P4 — AutoPoster Runtime Control" above. It cannot publish, push code, deploy, or bypass AutoPoster's own separate publish approval.
+- One exception exists: `chanter.autoposter_schedule_post` submits a real, approval-gated AutoPoster queue-scheduling mission to Operator. MCP cannot approve it; only an independent Operator control may authorize Operator to delegate to Agent Runtime. The flow cannot publish, push code, deploy, or bypass AutoPoster's separate publish approval.
 - No git diff content — only git status summaries
-- No test execution — only package.json script inspection (`tests/p4-autoposter-runtime.test.ts` exists in-repo for the P4 tools; this pass did not execute it and does not report a pass/fail result)
+- The exposed `chanter.test_summary` tool inspects package metadata only and never executes tests. Repository validation is separate: `npm test` passed 208/208 with isolated proposal/audit roots on 2026-07-15.
 - Stdio transport only — no HTTP/SSE
 - `.mcp-proposals/` needs periodic manual cleanup
 
@@ -220,7 +228,7 @@ Proposals persisted as individual JSON files in `.mcp-proposals/`. Path-safe IDs
 ## Future Roadmap
 
 ### P4 — AutoPoster Runtime Control (implemented and documented, narrowly scoped)
-A scoped slice of real execution is implemented and documented: `chanter.autoposter_schedule_post` (`write_runtime_gated`) performs real, approval-gated AutoPoster queue-scheduling via `chanter-agent-runtime`. P4 validation was not rerun in this documentation pass — see Limitations. This is not the general execution layer described below — `write_approved` remains fully blocked, and no product other than AutoPoster has an equivalent write path.
+A scoped slice of real execution is implemented and documented: `chanter.autoposter_schedule_post` (`write_runtime_gated`) submits to Operator durable authority, which alone may delegate the approval-gated Agent Runtime schedule action. This is not the general execution layer described below: `write_approved` remains fully blocked, and no product other than AutoPoster has an equivalent write path.
 
 ### Future — General Execution Layer
 - `write_approved` tools with full safety gates, extending real execution beyond the single AutoPoster scheduling exception
@@ -231,4 +239,4 @@ A scoped slice of real execution is implemented and documented: `chanter.autopos
 
 ---
 
-*Built for CHANTER. Safety first. Metadata-only by default; the one AutoPoster scheduling exception (`chanter.autoposter_schedule_post`) is real, narrowly scoped, and approval-gated by `chanter-agent-runtime` — documented above, not hidden.*
+*Built for CHANTER. Safety first. Metadata-only by default; the one AutoPoster scheduling exception is narrowly scoped, routed through Operator durable authority, and unable to publish.*

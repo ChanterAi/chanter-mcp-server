@@ -1,4 +1,4 @@
-﻿// Proposal store â€” file-based persistence for dry-run proposals.
+// Proposal store for file-based persistence of dry-run proposals.
 // Stores proposals as individual JSON files in .mcp-proposals/.
 // Path-safe. Prevents traversal. Never writes outside .mcp-proposals/ or .mcp-audit/.
 
@@ -10,7 +10,10 @@ import type {
   ProposalStatus,
 } from "./proposalTypes.js";
 
-const PROPOSALS_DIR = join(import.meta.dirname!, "..", "..", ".mcp-proposals");
+const PROPOSALS_DIR = resolve(
+  process.env.CHANTER_MCP_PROPOSALS_DIR?.trim()
+    || join(import.meta.dirname!, "..", "..", ".mcp-proposals"),
+);
 const MAX_PROPOSALS = 1000;
 const MAX_FILE_SIZE = 100_000; // 100KB
 
@@ -24,7 +27,7 @@ function ensureProposalsDir(): void {
  * Validate that a proposal ID is safe (no path traversal).
  */
 function isValidProposalId(proposalId: string): boolean {
-  // Only allow alphanumeric, hyphens, underscores â€” no path separators, dots, etc.
+  // Only allow alphanumeric, hyphens, and underscores; no path separators or dots.
   return /^[a-zA-Z0-9\-_]+$/.test(proposalId) && proposalId.length > 0 && proposalId.length <= 100;
 }
 
@@ -159,4 +162,3 @@ export function cleanupExpiredProposals(): number {
 
   return removed;
 }
-

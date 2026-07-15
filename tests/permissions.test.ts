@@ -1,4 +1,4 @@
-﻿// Tests: Permission model validation
+// Permission model validation tests.
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -58,6 +58,7 @@ describe("Permission Model", () => {
       "write_runtime_gated is reserved for the runtime-gated schedule tool"
     );
     assert.equal(PERMISSIONS["chanter.autoposter_schedule_post"]!.requiresApproval, true);
+    assert.equal(PERMISSIONS["chanter.autoposter_schedule_post"]!.requiresOperatorGate, true);
   });
 
   it("future write tool requirements specify all gates", () => {
