@@ -256,6 +256,38 @@ function makeFakeOperator(options: FakeOperatorOptions = {}) {
     return replayed === undefined ? record : { ...record, replayed };
   };
 
+  // Phase 2F-A: the unified graph-backed route wraps the same underlying
+  // mission record in the {graph, childMissionId, childMission} envelope.
+  // The graph's own coarse status only ever needs approval_required or
+  // completed here — a child result's presence (regardless of whether that
+  // result itself is succeeded/failed/denied) is what makes it "completed",
+  // exactly mirroring how a real AutoPoster graph node only leaves
+  // approval_required once its child mission has produced *some* result.
+  const graphSubmissionBody = (mission: FakeOperatorMission, replayed: boolean) => {
+    const completed = Boolean(mission.runtimeResult);
+    return {
+      graph: {
+        graphId: `graph-${mission.missionId}`,
+        traceId: mission.traceId,
+        idempotencyKey: mission.idempotencyKey,
+        status: completed ? "completed" : "approval_required",
+        approvedBy: mission.approvedBy,
+        replayed,
+        createdAt: mission.createdAt,
+        updatedAt: mission.updatedAt,
+        nodes: [{
+          nodeId: "autoposter_schedule",
+          status: completed ? "completed" : "blocked",
+          resultStatus: mission.runtimeResult?.status ?? null,
+          resultSummary: null,
+          typedError: null,
+        }],
+      },
+      childMissionId: mission.missionId,
+      childMission: completed ? publicMission(mission) : null,
+    };
+  };
+
   const bindingFor = (body: Record<string, unknown>, fallbackTraceId: string) => JSON.stringify({
     traceId: typeof body.traceId === "string" ? body.traceId : fallbackTraceId,
     workspaceId: typeof body.workspaceId === "string" ? body.workspaceId : "legacy-default",
@@ -297,7 +329,7 @@ function makeFakeOperator(options: FakeOperatorOptions = {}) {
     }
     const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
 
-    if (url.pathname === "/api/runtime-missions/autoposter/schedule") {
+    if (url.pathname === "/api/mission-graphs/autoposter-schedule") {
       calls.create += 1;
       calls.createBodies.push(body);
 
@@ -351,7 +383,7 @@ function makeFakeOperator(options: FakeOperatorOptions = {}) {
             error: "The request does not match the durable mission identity, scope, or payload.",
           }), { status: 409, headers: { "content-type": "application/json" } });
         }
-        return new Response(JSON.stringify(publicMission(existing, true)), {
+        return new Response(JSON.stringify(graphSubmissionBody(existing, true)), {
           status: 200,
           headers: { "content-type": "application/json" },
         });
@@ -391,7 +423,7 @@ function makeFakeOperator(options: FakeOperatorOptions = {}) {
       recordsById.set(missionId, record);
       missionIdByKey.set(idempotencyKey, missionId);
       missionIdByTrace.set(traceId, missionId);
-      return new Response(JSON.stringify(publicMission(record, false)), {
+      return new Response(JSON.stringify(graphSubmissionBody(record, false)), {
         status: 201,
         headers: { "content-type": "application/json" },
       });
@@ -493,7 +525,7 @@ describe("P4 — MCP reads use Runtime and writes use Operator", () => {
   it("the gateway has an explicit three-read allowlist and no MCP-owned write idempotency store", async () => {
     const here = path.dirname(fileURLToPath(import.meta.url));
     const source = readFileSync(path.join(here, "..", "src", "runtime", "autoposterGateway.ts"), "utf8");
-    assert.ok(source.includes("submitScheduleMissionToOperator"), "writes must use the Operator client");
+    assert.ok(source.includes("submitScheduleGraphToOperator"), "writes must use the Operator client");
     assert.equal(source.includes("createInMemoryIdempotencyStore"), false, "MCP must not own durable write identity");
 
     const { port, calls } = makePort();

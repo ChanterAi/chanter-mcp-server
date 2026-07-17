@@ -27,8 +27,8 @@ import {
 } from "chanter-agent-runtime";
 import {
   configureOperatorClientForTesting,
-  operatorResponseToRuntimeResult,
-  submitScheduleMissionToOperator,
+  operatorGraphResponseToRuntimeResult,
+  submitScheduleGraphToOperator,
   type OperatorClientWiring,
   type OperatorScheduleMissionInput,
 } from "./operatorClient.js";
@@ -161,8 +161,8 @@ async function executeScheduleMission(request: AutoPosterMissionInput): Promise<
     ...(request.traceId !== undefined ? { traceId: request.traceId } : {}),
   };
 
-  const response = await submitScheduleMissionToOperator(operatorInput);
-  return operatorResponseToRuntimeResult(operatorInput, response, "autoposter.post.schedule");
+  const response = await submitScheduleGraphToOperator(operatorInput);
+  return operatorGraphResponseToRuntimeResult(operatorInput, response, "autoposter.post.schedule");
 }
 
 /** Main gateway entry — routes read vs write actions. */
