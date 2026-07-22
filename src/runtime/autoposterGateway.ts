@@ -159,6 +159,10 @@ async function executeScheduleMission(request: AutoPosterMissionInput): Promise<
     ...(request.input.description !== undefined ? { description: String(request.input.description) } : {}),
     ...(request.missionId !== undefined ? { missionId: request.missionId } : {}),
     ...(request.traceId !== undefined ? { traceId: request.traceId } : {}),
+    ...(request.input.providerProofMode === true ? {
+      providerProofMode: true,
+      approvedMedia: request.input.approvedMedia as OperatorScheduleMissionInput["approvedMedia"],
+    } : {}),
   };
 
   const response = await submitScheduleGraphToOperator(operatorInput);

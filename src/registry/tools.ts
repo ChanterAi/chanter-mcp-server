@@ -4,7 +4,7 @@ import type { ChantProduct } from "./products.js";
 import type { PermissionLevel } from "./permissions.js";
 
 export interface McpToolParameter {
-  name: string; description: string; type: "string" | "number" | "boolean"; required: boolean; default?: unknown;
+  name: string; description: string; type: "string" | "number" | "boolean" | "object"; required: boolean; default?: unknown;
 }
 export interface McpToolDefinition {
   name: string; description: string; permissionLevel: PermissionLevel; productScope?: string; parameters: McpToolParameter[];
@@ -108,6 +108,8 @@ export const EXPOSED_TOOLS: McpToolDefinition[] = [
     { name: "requestedBy", description: "Requesting actor identity. Default: mcp-client.", type: "string", required: false },
     { name: "missionId", description: "Optional stable Operator mission ID. Reuse it for exact retries of the same logical mission.", type: "string", required: false },
     { name: "traceId", description: "Optional stable trace ID preserved through Operator, Runtime, and evidence lineage.", type: "string", required: false },
+    { name: "providerProofMode", description: "Explicit YouTube-only provider-proof mode. Requires the complete reviewed approvedMedia identity.", type: "boolean", required: false },
+    { name: "approvedMedia", description: "Closed-world reviewed MP4 identity: sha256, byteSize, mimeType, fileName, and container.", type: "object", required: false },
   ]},
 ];
 

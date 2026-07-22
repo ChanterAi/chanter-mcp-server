@@ -90,6 +90,9 @@ function mission(overrides: Partial<OperatorMissionRecord> = {}): OperatorMissio
     hashtags: INPUT.hashtags,
     title: null,
     description: null,
+    graphId: INPUT.providerProofMode ? "graph-proof" : null,
+    providerProofMode: INPUT.providerProofMode === true,
+    approvedMedia: INPUT.approvedMedia ?? null,
     scheduledAt: INPUT.scheduledAt,
     idempotencyKey: INPUT.idempotencyKey,
     approvalRequired: true,
@@ -500,6 +503,28 @@ describe("Operator Mission Gateway client", () => {
     assert.equal(mapped.status, "unavailable");
     assert.equal(mapped.errors[0]?.code, "OPERATOR_UNREACHABLE");
     assert.equal(JSON.stringify(mapped).includes("ECONNREFUSED"), false);
+  });
+
+  it("ADV-02 contains raw, URL-encoded, and base64 provider locators in MCP failures", async () => {
+    const locator = "https://provider.invalid/upload/resumable/session-canary";
+    for (const escaped of [locator, encodeURIComponent(locator), Buffer.from(locator).toString("base64")]) {
+      configureOperatorClientForTesting({
+        config: { baseUrl: "http://127.0.0.1:3001", token: "test-capability" },
+        fetchImpl: (async () => new Response(JSON.stringify({ code: "OPERATOR_ERROR", error: escaped }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        })) as typeof fetch,
+      });
+      const mapped = operatorResponseToRuntimeResult(
+        INPUT,
+        await submitScheduleMissionToOperator(INPUT),
+        ACTION,
+      );
+      const serialized = JSON.stringify(mapped);
+      assert.equal(serialized.includes("session-canary"), false);
+      assert.equal(serialized.includes(escaped), false);
+      assert.equal(mapped.errors[0]?.message, "[REDACTED_PROVIDER_LOCATOR]");
+    }
   });
 
   it("does not relabel non-Runtime failed, denied, or executing mission states as approval_required", () => {

@@ -15,7 +15,7 @@ export const AUTOPOSTER_TOOL_ACTIONS = {
 } as const;
 
 interface FieldSpec {
-  type: "string" | "number";
+  type: "string" | "number" | "boolean" | "object";
   required: boolean;
   preserveBlank?: boolean;
 }
@@ -36,7 +36,7 @@ function validateArgs(
       if (spec.required) errors.push(`"${key}" is required.`);
       continue;
     }
-    if (typeof value !== spec.type) {
+    if (typeof value !== spec.type || (spec.type === "object" && (Array.isArray(value) || value === null))) {
       errors.push(`"${key}" must be a ${spec.type}.`);
       continue;
     }
@@ -163,9 +163,11 @@ export async function handleAutoposterSchedulePost(args: Record<string, unknown>
     requestedBy: { type: "string", required: false },
     missionId: { type: "string", required: false, preserveBlank: true },
     traceId: { type: "string", required: false, preserveBlank: true },
+    providerProofMode: { type: "boolean", required: false },
+    approvedMedia: { type: "object", required: false },
   });
   if (!check.ok) return schemaRejection(action, check.errors);
-  const { workspaceId, accountId, provider, mediaUrl, scheduledAtUtc, idempotencyKey, caption, hashtags, title, description, requestedBy, missionId, traceId } =
+  const { workspaceId, accountId, provider, mediaUrl, scheduledAtUtc, idempotencyKey, caption, hashtags, title, description, requestedBy, missionId, traceId, providerProofMode, approvedMedia } =
     check.values;
 
   // Submission only. Independent Operator control must approve before execution.
@@ -181,6 +183,8 @@ export async function handleAutoposterSchedulePost(args: Record<string, unknown>
       ...(hashtags !== undefined ? { hashtags } : {}),
       ...(title !== undefined ? { title } : {}),
       ...(description !== undefined ? { description } : {}),
+      ...(providerProofMode !== undefined ? { providerProofMode } : {}),
+      ...(approvedMedia !== undefined ? { approvedMedia } : {}),
     },
     ...(typeof workspaceId === "string" ? { workspaceId } : {}),
     accountId: accountId as string,

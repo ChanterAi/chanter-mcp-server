@@ -12,6 +12,7 @@ import {
   type RuntimeMissionResult,
   type RuntimeMissionStatus,
 } from "chanter-agent-runtime";
+import { redactSensitiveValues } from "../safety/redaction.js";
 
 const SCHEDULE_ACTION = "autoposter.post.schedule";
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -35,6 +36,10 @@ const RUNTIME_STATUSES = new Set<RuntimeMissionStatus>([
   "approval_required",
   "unavailable",
 ]);
+
+function safeProviderText(value: string): string {
+  return redactText(redactSensitiveValues(value));
+}
 const IDEMPOTENCY_OUTCOMES = new Set<RuntimeMissionIdempotencyOutcome>([
   "not_applicable",
   "first_execution",
@@ -56,6 +61,14 @@ export interface OperatorScheduleMissionInput {
   requestedBy: string;
   missionId?: string;
   traceId?: string;
+  providerProofMode?: boolean;
+  approvedMedia?: {
+    sha256: string;
+    byteSize: number;
+    mimeType: "video/mp4";
+    fileName: string;
+    container: "mp4";
+  };
 }
 
 export interface OperatorClientConfig {
@@ -183,6 +196,9 @@ export interface OperatorMissionRecord {
   hashtags: string;
   title: string | null;
   description: string | null;
+  graphId: string | null;
+  providerProofMode: boolean;
+  approvedMedia: OperatorScheduleMissionInput["approvedMedia"] | null;
   scheduledAt: string;
   idempotencyKey: string;
   approvalRequired: true;
@@ -208,8 +224,8 @@ export interface OperatorMissionResponse {
 
 function safeError(code: unknown, message: unknown, fallbackCode: string, fallbackMessage: string) {
   return {
-    code: redactText(typeof code === "string" && code ? code : fallbackCode),
-    message: redactText(typeof message === "string" && message ? message : fallbackMessage),
+    code: safeProviderText(typeof code === "string" && code ? code : fallbackCode),
+    message: safeProviderText(typeof message === "string" && message ? message : fallbackMessage),
   };
 }
 
@@ -271,6 +287,9 @@ function isOperatorMissionRecord(value: unknown): value is OperatorMissionRecord
     typeof candidate.hashtags === "string" &&
     (candidate.title === null || typeof candidate.title === "string") &&
     (candidate.description === null || typeof candidate.description === "string") &&
+    (candidate.graphId === null || typeof candidate.graphId === "string") &&
+    typeof candidate.providerProofMode === "boolean" &&
+    (candidate.approvedMedia === null || isRecord(candidate.approvedMedia)) &&
     typeof candidate.scheduledAt === "string" &&
     typeof candidate.idempotencyKey === "string" &&
     candidate.approvalRequired === true &&
@@ -373,6 +392,8 @@ function validateMissionBinding(
     mission.hashtags !== input.hashtags.trim() ||
     mission.title !== (input.title?.trim() || null) ||
     mission.description !== (input.description?.trim() || null) ||
+    mission.providerProofMode !== (input.providerProofMode === true) ||
+    JSON.stringify(mission.approvedMedia) !== JSON.stringify(input.approvedMedia ?? null) ||
     mission.scheduledAt !== canonicalScheduledAt(input.scheduledAt)
   ) {
     return "Operator response scope or payload does not match the request.";
@@ -476,6 +497,8 @@ export async function submitScheduleMissionToOperator(
           requestedBy: input.requestedBy,
           ...(input.missionId !== undefined ? { missionId: input.missionId } : {}),
           ...(input.traceId !== undefined ? { traceId: input.traceId } : {}),
+          ...(input.providerProofMode !== undefined ? { providerProofMode: input.providerProofMode } : {}),
+          ...(input.approvedMedia !== undefined ? { approvedMedia: input.approvedMedia } : {}),
         }),
         signal: controller.signal,
         redirect: "error",
@@ -535,8 +558,8 @@ function baseResult(
     evidence: null,
     warnings: [],
     errors: errors.map((error) => ({
-      code: redactText(error.code),
-      message: redactText(error.message),
+      code: safeProviderText(error.code),
+      message: safeProviderText(error.message),
     })),
     policyDecision: null,
     approvalDecision: {
@@ -646,10 +669,10 @@ export function operatorResponseToRuntimeResult(
       : redactJsonValue(
           mission.runtimeResult.evidence as unknown as JsonValue,
         ) as unknown as RuntimeMissionResult["evidence"],
-    warnings: mission.runtimeResult.warnings.map(redactText),
+    warnings: mission.runtimeResult.warnings.map(safeProviderText),
     errors: mission.runtimeResult.errors.map((error) => ({
-      code: redactText(error.code),
-      message: redactText(error.message),
+      code: safeProviderText(error.code),
+      message: safeProviderText(error.message),
     })),
     idempotency: { ...mission.runtimeResult.idempotency },
   };
@@ -893,6 +916,8 @@ export async function submitScheduleGraphToOperator(
           requestedBy: input.requestedBy,
           ...(input.missionId !== undefined ? { missionId: input.missionId } : {}),
           ...(input.traceId !== undefined ? { traceId: input.traceId } : {}),
+          ...(input.providerProofMode !== undefined ? { providerProofMode: input.providerProofMode } : {}),
+          ...(input.approvedMedia !== undefined ? { approvedMedia: input.approvedMedia } : {}),
         }),
         signal: controller.signal,
         redirect: "error",
@@ -1012,10 +1037,10 @@ export function operatorGraphResponseToRuntimeResult(
     evidence: childResult.evidence === null
       ? null
       : redactJsonValue(childResult.evidence as unknown as JsonValue) as unknown as RuntimeMissionResult["evidence"],
-    warnings: childResult.warnings.map(redactText),
+    warnings: childResult.warnings.map(safeProviderText),
     errors: childResult.errors.map((error) => ({
-      code: redactText(error.code),
-      message: redactText(error.message),
+      code: safeProviderText(error.code),
+      message: safeProviderText(error.message),
     })),
     idempotency: {
       key: input.idempotencyKey,

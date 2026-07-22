@@ -21,6 +21,8 @@ const SENSITIVE_KEYS = [
 ];
 
 const SENSITIVE_PATTERNS: Array<[RegExp, string]> = [
+  // Provider upload/resumable-session locators are bearer capabilities.
+  [/https?:\/\/[^\s"'<>]*(?:upload|resumable)[^\s"'<>]*/gi, "[REDACTED_PROVIDER_LOCATOR]"],
   // Bearer tokens
   [/(?:bearer\s+)([\w\-\.]+)/gi, "bearer [REDACTED_TOKEN]"],
   // API key patterns (sk-..., key-..., etc.)
@@ -36,6 +38,18 @@ const SENSITIVE_PATTERNS: Array<[RegExp, string]> = [
  */
 export function redactSensitiveValues(input: string): string {
   let result = input;
+
+  // Decode only for detection. If an encoded locator is present, replace the
+  // complete diagnostic so no differently encoded fragment can escape.
+  const candidates = [input];
+  try { candidates.push(decodeURIComponent(input)); } catch { /* malformed encoding is left for ordinary redaction */ }
+  for (const token of input.split(/[^A-Za-z0-9+/=_-]+/)) {
+    if (token.length < 20 || token.length > 8192) continue;
+    try { candidates.push(Buffer.from(token, "base64").toString("utf8")); } catch { /* not base64 */ }
+  }
+  if (candidates.some(value => /https?:\/\/[^\s"'<>]*(?:upload|resumable)[^\s"'<>]*/i.test(value))) {
+    return "[REDACTED_PROVIDER_LOCATOR]";
+  }
 
   // Pattern-based redaction
   for (const [pattern, replacement] of SENSITIVE_PATTERNS) {

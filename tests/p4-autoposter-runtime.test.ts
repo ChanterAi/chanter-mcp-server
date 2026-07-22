@@ -79,6 +79,7 @@ function makePort(overrides: Partial<AutoPosterOperationsPort> = {}): { port: Au
           publishId: "",
           providerStatus: "scheduled",
           providerVerification: null,
+          providerOperation: null,
           lockedAt: null,
           claimAttempts: 0,
           publishAttemptBudget: 5,
@@ -130,6 +131,9 @@ interface FakeOperatorMission {
   hashtags: string;
   title: string | null;
   description: string | null;
+  graphId: string;
+  providerProofMode: boolean;
+  approvedMedia: Record<string, unknown> | null;
   scheduledAt: string;
   idempotencyKey: string;
   requestedBy: string;
@@ -301,6 +305,8 @@ function makeFakeOperator(options: FakeOperatorOptions = {}) {
     hashtags: body.hashtags,
     title: body.title ?? null,
     description: body.description ?? null,
+    providerProofMode: body.providerProofMode === true,
+    approvedMedia: body.approvedMedia ?? null,
     scheduledAt: body.scheduledAt,
     requestedBy: body.requestedBy,
   });
@@ -410,6 +416,11 @@ function makeFakeOperator(options: FakeOperatorOptions = {}) {
         hashtags: String(body.hashtags ?? ""),
         title: typeof body.title === "string" ? body.title : null,
         description: typeof body.description === "string" ? body.description : null,
+        graphId: `graph-${missionId}`,
+        providerProofMode: body.providerProofMode === true,
+        approvedMedia: body.approvedMedia && typeof body.approvedMedia === "object"
+          ? body.approvedMedia as Record<string, unknown>
+          : null,
         scheduledAt: String(body.scheduledAt ?? ""),
         idempotencyKey,
         requestedBy: String(body.requestedBy ?? ""),
